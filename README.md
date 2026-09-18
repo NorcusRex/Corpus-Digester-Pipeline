@@ -107,8 +107,8 @@ for supplying word lists and project glossaries that protect real terms.
 
 | File | Covers |
 |---|---|
-| [`docs/quickstart.txt`](docs/quickstart.txt) | Running the batch files |
-| [`docs/pipeline-guide.txt`](docs/pipeline-guide.txt) | Full reference, including named pipeline inputs |
+| [`docs/quickstart.md`](docs/quickstart.md) | Running the batch files |
+| [`docs/pipeline-guide.md`](docs/pipeline-guide.md) | Full reference, including named pipeline inputs |
 | [`docs/brief-part-1-pipeline-and-libraries.md`](docs/brief-part-1-pipeline-and-libraries.md) | Design history: the pipeline and libraries |
 | [`docs/brief-part-2-conversation-research-project.md`](docs/brief-part-2-conversation-research-project.md) | Design history: conversation research |
 | [`references/project-manifest-format.md`](references/project-manifest-format.md) | Format contract for the project manifest |
