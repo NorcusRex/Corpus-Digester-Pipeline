@@ -158,11 +158,23 @@ the per-corpus marshaling wrapper. Needs a ruling.
 The Python engine already takes paths as arguments, so it is closer to
 path-agnostic than the handoff assumes.
 
-Also under this decision: replace the stray `SKILL.md` with
-`project-manifest-format.md`. **Already verified** — the manifest is consumed by
+Decision 9.6 is **done**: the stray `SKILL.md` is replaced by
+`project-manifest-format.md` v2.3, read from the `update-project-manifest`
+skill's own reference folder. The manifest is consumed by
 `claude_to_markdown.py`, detected by content shape (`project_uuid` +
 `conversations`) rather than by filename, and unknown keys are read with
-`.get()` and ignored. Adding `manifest_format_version` needs no parser change.
+`.get()` and ignored — so `manifest_format_version` needs no parser change,
+verified against a manifest carrying every documented field plus invented ones.
+The manifest is recorded as a named pipeline input in `readme.txt` alongside
+`project_names.tsv`.
+
+One inconsistency to raise with whoever maintains that reference file: it is
+headed **Version 2.3**, and its *Versioning* section says the document version
+and `manifest_format_version` "move together", giving `this document at v1.0
+describes "manifest_format_version": "1.0"`. Its own example then shows
+`"manifest_format_version": "1.0"` under a 2.3 header. By its stated rule the
+example should read `"2.3"`. Harmless today, since the pipeline ignores the
+field, but it will confuse the first person who tries to validate against it.
 
 ---
 

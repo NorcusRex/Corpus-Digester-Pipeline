@@ -3,6 +3,37 @@ ARCHIVE DIGESTION PIPELINE - README
 ================================================================
 
 
+NAMED PIPELINE INPUTS
+---------------------
+Data the pipeline reads but does not produce. All are configuration, not code,
+and belong beside a corpus's marshaling wrapper in its _Tools folder.
+
+  <PROJECT_UUID>_manifest.json
+      Lists every conversation in a Claude project by UUID and title. Consumed
+      by claude_to_markdown.py to recover the conversation-to-project mapping
+      that Claude's data export does not preserve. Detected by content shape
+      (project_uuid + conversations), never by filename, so it can sit anywhere
+      inside an export. Its format contract is project-manifest-format.md,
+      shipped beside this readme. Unknown keys are ignored, so a manifest from a
+      newer format revision is read without complaint.
+
+      Note it deliberately does NOT follow the corpus filename convention. It is
+      a machine-read input keyed by project UUID, not a corpus document.
+
+  project_names.tsv
+      Maps ChatGPT project and GPT ids to human-readable folder names. Applied
+      by rename_chatgpt_projects.py after conversion and before the metadata
+      pass, so keywords and the index reflect the final names. Idempotent.
+
+  <corpus>_ai_subset.txt
+      Selection list naming which digested AI conversations belong to a given
+      corpus. Consumed by sync_subset.py via sync_gdrive_corpus.bat.
+
+  A word list (optional)
+      Passed with --dictionary. Used only to PREVENT keyword rejections, never
+      to cause them.
+
+
 NOTE ON SCRIPT NAMES
 --------------------
 The Loom-specific batch files were replaced by generic ones that take the
