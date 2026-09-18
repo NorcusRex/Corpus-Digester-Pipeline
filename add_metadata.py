@@ -206,6 +206,262 @@ def keyword_count_for(word_count: int, base: int = 10, ceiling: int = 40) -> int
     return min(ceiling, base + word_count // 500)
 
 
+# ---------------------------------------------------------------------------
+# Provenance structure classification  (digester handoff v6.8, Decision 6)
+# ---------------------------------------------------------------------------
+#
+# Documents reach the corpus in four shapes and only two can be tiered.
+# Classification is by POSITIVE DETECTION ONLY: a file is turn-structured or
+# speaker-labelled because a pattern matched, never because another pattern
+# failed. Anything unmatched is `unknown`, which is not an error -- it means
+# the file keeps unweighted keyword extraction and gets reported.
+#
+# Turns are never inferred from voice, topic shift, or style. A misattributed
+# turn would put assistant prose at tier 0, wearing the owner's authority.
+
+# Speaker-turn headings written by the export converters. Claude writes
+# "## Human" / "## Assistant"; ChatGPT writes "## User" / "## Assistant" /
+# "## System" / "## Tool", optionally with a parenthesised role qualifier.
+TURN_HEADING_RE = re.compile(
+    r"^##[ \t]+(Human|User|Assistant|System|Tool)\b[^\n]*$", re.MULTILINE
+)
+
+# Inline speaker labels: "**Nick:**" opening a line. Speaker names are an open
+# set -- Nick, Matt, Claude, ChatGPT and others -- so we match the label SHAPE
+# and treat the names found as data.
+SPEAKER_LABEL_RE = re.compile(
+    r"^[ \t]{0,3}\*\*([A-Z][A-Za-z0-9 .'\u2019-]{0,39}):\*\*", re.MULTILINE
+)
+
+BLOCKQUOTE_RE = re.compile(r"^[ \t]{0,3}>")
+
+# Heading roles that speak for the subject, and roles that do not.
+SUBJECT_ROLES = {"Human", "User"}
+ASSISTANT_ROLES = {"Assistant", "System", "Tool"}
+
+# Labels that name an AI rather than a person. Used ONLY to work out which
+# labelled speaker is the subject -- never to classify a document.
+AI_SPEAKER_NAMES = {
+    "claude", "chatgpt", "gpt", "ai", "assistant", "bot", "copilot",
+    "gemini", "bard", "llama", "model", "system", "tool",
+}
+
+# A frontmatter `source` naming an AI export. A document with no conversational
+# markers is `single-voice` only when its source is NOT an AI.
+AI_SOURCE_RE = re.compile(r"chatgpt|claude|gpt|openai|anthropic", re.I)
+
+STRUCT_TURN      = "turn-structured"
+STRUCT_LABELLED  = "speaker-labelled"
+STRUCT_SINGLE    = "single-voice"
+STRUCT_UNKNOWN   = "unknown"
+
+
+def classifiable_text(body: str) -> str:
+    """Body with the auto-index block and fenced code removed.
+
+    The auto-index block emits `**Keywords:**` and `**Outline:**`, which match
+    the speaker-label shape. Stripping it first keeps our own output from being
+    mistaken for a speaker.
+    """
+    text = INDEX_BLOCK_RE.sub(" ", body)
+    return CODE_FENCE_RE.sub(" ", text)
+
+
+def find_turn_headings(text: str) -> list[tuple[int, int, str]]:
+    """Return (heading_start, content_start, role) for each turn heading."""
+    return [(m.start(), m.end(), m.group(1))
+            for m in TURN_HEADING_RE.finditer(text)]
+
+
+def find_speaker_labels(text: str) -> list[tuple[int, int, str]]:
+    """Return (label_start, content_start, name) for each inline speaker label."""
+    return [(m.start(), m.end(), m.group(1).strip())
+            for m in SPEAKER_LABEL_RE.finditer(text)]
+
+
+def classify_provenance_structure(body: str, fm: dict) -> tuple[str, list[str]]:
+    """Classify a document's provenance structure. Returns (value, speakers).
+
+    turn-structured  -- converted AI export: role headings for both sides
+    speaker-labelled -- inline `**Name:**` labels, at least two recurring
+    single-voice     -- no conversational markers and a non-AI source
+    unknown          -- everything else
+    """
+    text = classifiable_text(body)
+
+    roles = {role for _, _, role in find_turn_headings(text)}
+    if (roles & SUBJECT_ROLES) and (roles & ASSISTANT_ROLES):
+        return STRUCT_TURN, sorted(roles)
+
+    # Require at least two distinct labels EACH occurring at least twice. A
+    # real exchange alternates; a one-off bold lead-in such as "**Note:**"
+    # does not. This is a structural test rather than a blocklist of words.
+    seen: dict[str, int] = {}
+    for _, _, name in find_speaker_labels(text):
+        seen[name] = seen.get(name, 0) + 1
+    recurring = sorted(n for n, c in seen.items() if c >= 2)
+    if len(recurring) >= 2:
+        return STRUCT_LABELLED, recurring
+
+    source = str(fm.get("source", "") or "").strip()
+    if source and not AI_SOURCE_RE.search(source):
+        return STRUCT_SINGLE, []
+
+    return STRUCT_UNKNOWN, []
+
+
+# ---------------------------------------------------------------------------
+# Provenance weighting  (digester handoff v6.8, Decision 1)
+# ---------------------------------------------------------------------------
+#
+# Each term is weighted by the acceptance tier of the assertion carrying it.
+# Tier definitions live in the write-report skill's acceptance-rubric.md.
+#
+# Only the structurally detectable tiers are assigned here -- 0, 5, 6 and 7.
+# Tiers 1-4 require one semantic judgment (endorsement versus objection after
+# a reference) and are DEFERRED, as the handoff permits. A deferred tier is
+# never guessed; the term simply falls to whichever structural tier applies.
+
+TIER_WEIGHTS: dict[int, int] = {0: 128, 1: 64, 2: 32, 3: 16,
+                                4: 8, 5: 4, 6: 2, 7: 1}
+
+# Where a term was found. Used to resolve its tier.
+_SUBJECT_PLAIN = "subject_plain"    # non-quoted text in a subject turn
+_SUBJECT_QUOTE = "subject_quote"    # blockquoted text inside a subject turn
+_ASSISTANT     = "assistant"        # any non-subject turn
+_NEUTRAL       = "neutral"          # text before the first turn marker
+
+
+def _split_quoted(segment: str) -> tuple[str, str]:
+    """Split a subject turn into (non-quoted, quoted) text.
+
+    Blockquoted text in a subject turn is quoted material, not the subject's
+    own assertion -- quoting an assertion does not transfer it. The quote is
+    kept and tiered separately rather than discarded.
+    """
+    plain: list[str] = []
+    quoted: list[str] = []
+    for line in segment.splitlines():
+        (quoted if BLOCKQUOTE_RE.match(line) else plain).append(line)
+    return "\n".join(plain), "\n".join(quoted)
+
+
+def _turn_spans(text: str, structure: str,
+                subject_names: set[str] | None) -> list[tuple[str, str]] | None:
+    """Split a document into (kind, text) spans in document order.
+
+    Returns None when the spans cannot be attributed safely -- for a
+    speaker-labelled document whose subject cannot be identified.
+    """
+    spans: list[tuple[str, str]] = []
+
+    if structure == STRUCT_TURN:
+        marks = find_turn_headings(text)
+        if not marks:
+            return None
+        if marks[0][0] > 0:
+            spans.append((_NEUTRAL, text[:marks[0][0]]))
+        for i, (_, content_start, role) in enumerate(marks):
+            end = marks[i + 1][0] if i + 1 < len(marks) else len(text)
+            kind = _SUBJECT_PLAIN if role in SUBJECT_ROLES else _ASSISTANT
+            spans.append((kind, text[content_start:end]))
+
+    elif structure == STRUCT_LABELLED:
+        marks = find_speaker_labels(text)
+        if not marks:
+            return None
+        names = {name for _, _, name in marks}
+        if subject_names:
+            subjects = {n for n in names if n.lower() in subject_names}
+        else:
+            # Exactly one non-AI speaker resolves the subject on its own.
+            # Two or more human names (Nick and Matt, say) is ambiguous, and
+            # guessing would put the wrong person's words at tier 0.
+            human = {n for n in names if n.lower() not in AI_SPEAKER_NAMES}
+            subjects = human if len(human) == 1 else set()
+        if not subjects:
+            return None
+        if marks[0][0] > 0:
+            spans.append((_NEUTRAL, text[:marks[0][0]]))
+        for i, (_, content_start, name) in enumerate(marks):
+            end = marks[i + 1][0] if i + 1 < len(marks) else len(text)
+            # Unlabelled prose continues the last labelled speaker, so the
+            # span simply runs to the next label.
+            kind = _SUBJECT_PLAIN if name in subjects else _ASSISTANT
+            spans.append((kind, text[content_start:end]))
+
+    else:
+        return None
+
+    # Separate blockquotes out of subject spans.
+    resolved: list[tuple[str, str]] = []
+    for kind, seg in spans:
+        if kind == _SUBJECT_PLAIN:
+            plain, quoted = _split_quoted(seg)
+            if plain.strip():
+                resolved.append((_SUBJECT_PLAIN, plain))
+            if quoted.strip():
+                resolved.append((_SUBJECT_QUOTE, quoted))
+        else:
+            resolved.append((kind, seg))
+    return resolved
+
+
+def _tier_for(kinds: set[str], first_kind: str) -> int:
+    """Resolve a term's acceptance tier from where it appears.
+
+    tier 0 -- the subject's own words, unquoted
+    tier 5 -- first used by the assistant, taken up by the subject unquoted
+    tier 6 -- reaches the subject only inside a quotation
+    tier 7 -- never leaves the assistant's turns
+    """
+    if _SUBJECT_PLAIN in kinds:
+        if _ASSISTANT in kinds and first_kind == _ASSISTANT:
+            return 5
+        return 0
+    if _SUBJECT_QUOTE in kinds:
+        return 6
+    return 7
+
+
+def provenance_weighted_counts(
+    body: str, structure: str,
+    subject_names: set[str] | None = None,
+) -> tuple[dict[str, float] | None, str]:
+    """Term counts scaled by the acceptance tier of the assertion carrying them.
+
+    Returns (counts, reason). `counts` is None when the document cannot be
+    weighted, and `reason` says why. Nothing is discarded: every term that
+    survives tokenisation keeps at least weight 1.
+    """
+    if structure not in (STRUCT_TURN, STRUCT_LABELLED):
+        return None, f"structure is {structure}"
+
+    text = classifiable_text(body)
+    spans = _turn_spans(text, structure, subject_names)
+    if spans is None:
+        return None, "subject could not be identified from the speaker labels"
+
+    counts: Counter = Counter()
+    kinds: dict[str, set[str]] = {}
+    first_kind: dict[str, str] = {}
+
+    for kind, segment in spans:
+        for term in _tokenize(segment):
+            counts[term] += 1
+            kinds.setdefault(term, set()).add(kind)
+            first_kind.setdefault(term, kind)
+
+    if not counts:
+        return None, "no tokens survived filtering"
+
+    weighted: dict[str, float] = {}
+    for term, count in counts.items():
+        tier = _tier_for(kinds[term], first_kind[term])
+        weighted[term] = count * TIER_WEIGHTS[tier]
+    return weighted, f"weighted over {len(spans)} spans"
+
+
 def _tokenize(body: str) -> list[str]:
     """Lowercase tokens with stopwords and short words filtered out.
     Stub strings and code blocks are stripped first via strip_code."""
@@ -214,23 +470,32 @@ def _tokenize(body: str) -> list[str]:
     return [t for t in tokens if t not in STOPWORDS and len(t) >= 4]
 
 
-def top_keywords(body: str, n: int = 10) -> list[str]:
-    """Single-document fallback: rank by raw frequency.
+def top_keywords(body: str, n: int = 10,
+                 tf_counts: dict | None = None) -> list[str]:
+    """Single-document fallback: rank by frequency.
 
     Used when no corpus-wide context is available. The corpus-aware caller
     in process_file() prefers top_keywords_tfidf which generally produces
     better topic words by penalizing terms that appear in many documents.
+
+    `tf_counts`, when given, replaces the raw frequency count with
+    provenance-weighted counts from provenance_weighted_counts().
     """
-    filtered = _tokenize(body)
-    if not filtered:
+    if tf_counts is not None:
+        counts = tf_counts
+    else:
+        filtered = _tokenize(body)
+        if not filtered:
+            return []
+        counts = Counter(filtered)
+    if not counts:
         return []
-    counts = Counter(filtered)
     ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
     return [w for w, _ in ranked[:n]]
 
 
 def top_keywords_tfidf(body: str, doc_freq: dict, total_docs: int,
-                       n: int = 10) -> list[str]:
+                       n: int = 10, tf_counts: dict | None = None) -> list[str]:
     """Corpus-aware ranking: TF-IDF score with sublinear TF.
 
     For each candidate term:
@@ -243,12 +508,23 @@ def top_keywords_tfidf(body: str, doc_freq: dict, total_docs: int,
     Terms appearing in MANY documents (generic words like "edge", "roll")
     get penalized; terms distinctive to this document are surfaced. Sublinear
     TF dampens the effect of a single keyword being repeated 80 times.
+    When `tf_counts` is supplied, it replaces the raw term frequency with
+    provenance-weighted counts -- each term's count scaled by the acceptance
+    tier of the assertion carrying it. IDF is unchanged: document frequency
+    is a property of the corpus, not of who spoke. Because TF is sublinear,
+    a 128x weight becomes a +log(128) = +4.85 bonus rather than a 128x one,
+    which is what keeps the tier ladder from swamping the ranking.
     """
     import math
-    filtered = _tokenize(body)
-    if not filtered:
+    if tf_counts is not None:
+        tf = tf_counts
+    else:
+        filtered = _tokenize(body)
+        if not filtered:
+            return []
+        tf = Counter(filtered)
+    if not tf:
         return []
-    tf = Counter(filtered)
     scored: list[tuple[float, str]] = []
     for term, count in tf.items():
         df = doc_freq.get(term, 0)
@@ -287,6 +563,28 @@ def build_corpus_doc_freq(md_files: list) -> tuple[dict, int]:
 # ---------------------------------------------------------------------------
 # Frontmatter parse / emit
 # ---------------------------------------------------------------------------
+
+# Sidecars stand in for a file the pipeline cannot convert. Their body is
+# boilerplate, so keywords come from the original's name and path instead --
+# that is what makes the sidecar findable, and it is the whole reason the
+# sidecar exists.
+SIDECAR_SOURCE = "unconverted file (sidecar)"
+
+
+def sidecar_keywords(fm: dict, n: int = 10) -> list[str]:
+    """Keywords for a sidecar, drawn from the original's name and path."""
+    parts: list[str] = []
+    for field in ("source_file", "source_path"):
+        raw = str(fm.get(field, "") or "")
+        parts.extend(re.split(r"[\\/._\-\s]+", raw))
+    seen: list[str] = []
+    for token in parts:
+        t = token.strip().lower()
+        if len(t) < 3 or t in STOPWORDS or t in seen:
+            continue
+        seen.append(t)
+    return seen[:n]
+
 
 def parse_frontmatter(text: str) -> tuple[dict, str]:
     """Return (existing_dict, body_without_frontmatter). Minimal YAML subset."""
@@ -379,7 +677,9 @@ def update_body_with_index(body: str, index_block: str) -> str:
 
 def process_file(path: Path, n_keywords: int | None, write_index: bool,
                  doc_freq: dict | None = None,
-                 total_docs: int = 0) -> bool:
+                 total_docs: int = 0,
+                 subject_names: set[str] | None = None,
+                 stats: Counter | None = None) -> bool:
     """Update the file in place. Return True if anything changed.
 
     When `doc_freq` and `total_docs` are provided (the corpus-aware mode used
@@ -398,10 +698,31 @@ def process_file(path: Path, n_keywords: int | None, write_index: bool,
     wc = word_count(body)
     actual_n = n_keywords if n_keywords is not None else keyword_count_for(wc)
 
-    if doc_freq is not None and total_docs > 0:
-        kw = top_keywords_tfidf(body, doc_freq, total_docs, n=actual_n)
+    # Classify provenance structure before any weighting is applied, and
+    # record it so downstream tools can see why a file was or was not
+    # weighted. `unknown` is a safe default, not an error.
+    structure, speakers = classify_provenance_structure(body, existing)
+
+    tf_counts = None
+    weight_note = ""
+    if structure in (STRUCT_TURN, STRUCT_LABELLED):
+        tf_counts, weight_note = provenance_weighted_counts(
+            body, structure, subject_names)
+
+    if str(existing.get("source", "")) == SIDECAR_SOURCE:
+        kw = sidecar_keywords(existing, n=actual_n)
+    elif doc_freq is not None and total_docs > 0:
+        kw = top_keywords_tfidf(body, doc_freq, total_docs, n=actual_n,
+                                tf_counts=tf_counts)
     else:
-        kw = top_keywords(body, n=actual_n)
+        kw = top_keywords(body, n=actual_n, tf_counts=tf_counts)
+
+    if stats is not None:
+        stats[f"structure_{structure}"] += 1
+        stats["keywords_weighted" if tf_counts is not None
+              else "keywords_unweighted"] += 1
+        if structure in (STRUCT_TURN, STRUCT_LABELLED) and tf_counts is None:
+            stats["weighting_blocked"] += 1
     # Sort alphabetically for stable diffs across re-runs and easier
     # visual scanning. The ranking is preserved by score during extraction;
     # alphabetical output is only the storage order.
@@ -419,6 +740,18 @@ def process_file(path: Path, n_keywords: int | None, write_index: bool,
     # Always-overwrite computed fields.
     existing["word_count"] = wc
     existing["keywords"] = kw
+    existing["provenance_structure"] = structure
+    # Keywords that could not be provenance-weighted are marked as such, so a
+    # reader never mistakes unweighted output for weighted output.
+    existing["keywords_weighted"] = tf_counts is not None
+    if structure == STRUCT_LABELLED and speakers:
+        existing["provenance_speakers"] = speakers
+    elif "provenance_speakers" in existing and structure != STRUCT_LABELLED:
+        del existing["provenance_speakers"]
+    if structure in (STRUCT_TURN, STRUCT_LABELLED) and tf_counts is None:
+        existing["weighting_skipped"] = weight_note
+    elif "weighting_skipped" in existing:
+        del existing["weighting_skipped"]
     existing["indexed_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     if write_index:
@@ -429,6 +762,44 @@ def process_file(path: Path, n_keywords: int | None, write_index: bool,
         path.write_text(new_text, encoding="utf-8")
         return True
     return False
+
+
+# ---------------------------------------------------------------------------
+# Reporting
+# ---------------------------------------------------------------------------
+
+def report_structure_stats(stats: Counter, unknown_files: list,
+                           root: Path | None = None,
+                           max_listed: int = 40) -> None:
+    """Print the provenance-structure tally and list every `unknown` file.
+
+    Every `unknown` file is reported: they are candidates for an AI pass to
+    recover turns, or for the owner to locate the source conversation. The
+    report is the deliverable -- no recovery is attempted here.
+    """
+    total = sum(stats[f"structure_{k}"] for k in
+                (STRUCT_TURN, STRUCT_LABELLED, STRUCT_SINGLE, STRUCT_UNKNOWN))
+    if not total:
+        return
+    print()
+    print("Provenance structure:")
+    for label in (STRUCT_TURN, STRUCT_LABELLED, STRUCT_SINGLE, STRUCT_UNKNOWN):
+        print(f"  {label:<17}: {stats[f'structure_{label}']:>6,}")
+    print(f"  keywords weighted: {stats['keywords_weighted']:>6,}")
+    print(f"  keywords plain   : {stats['keywords_unweighted']:>6,}")
+    if stats["weighting_blocked"]:
+        print(f"  [info] {stats['weighting_blocked']} conversational file(s) "
+              f"could not be weighted; pass --subject to name the subject.")
+    if unknown_files:
+        print(f"  [report] {len(unknown_files)} file(s) classified unknown:")
+        for f in unknown_files[:max_listed]:
+            try:
+                shown = f.relative_to(root) if root else f
+            except (ValueError, TypeError):
+                shown = f
+            print(f"    - {shown}")
+        if len(unknown_files) > max_listed:
+            print(f"    ... and {len(unknown_files) - max_listed} more")
 
 
 # ---------------------------------------------------------------------------
@@ -448,7 +819,15 @@ def main() -> int:
                          "very long).")
     ap.add_argument("--no-index", action="store_true",
                     help="Skip the in-body auto-index block; only update frontmatter")
+    ap.add_argument("--subject", action="append", default=None,
+                    help="Speaker label naming the subject in speaker-labelled "
+                         "documents (repeatable). Without it, a document with "
+                         "exactly one non-AI speaker resolves on its own and "
+                         "any other stays unweighted.")
     args = ap.parse_args()
+
+    subject_names = ({s.lower() for s in args.subject}
+                     if args.subject else None)
 
     root = Path(args.path)
     if root.is_file():
@@ -472,13 +851,20 @@ def main() -> int:
         print(f"  vocabulary: {len(doc_freq)} unique terms across {total_docs} files")
 
     changed = 0
+    stats: Counter = Counter()
+    unknown_files: list[Path] = []
     for f in files:
+        before = stats["structure_unknown"]
         if process_file(f, n_keywords=args.keywords,
                         write_index=not args.no_index,
-                        doc_freq=doc_freq, total_docs=total_docs):
+                        doc_freq=doc_freq, total_docs=total_docs,
+                        subject_names=subject_names, stats=stats):
             changed += 1
+        if stats["structure_unknown"] > before:
+            unknown_files.append(f)
 
     print(f"Processed {len(files)} file(s); updated {changed}.")
+    report_structure_stats(stats, unknown_files, root)
     return 0
 
 
