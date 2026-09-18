@@ -19,6 +19,7 @@ REM     <this file> --push           also push to Drive
 REM     <this file> --sync           also mirror selected AI conversations
 REM     <this file> --all            everything
 REM     <this file> --dry-run        show what would happen, change nothing
+REM     <this file> --audit          also write a rejected-keyword report
 REM
 REM   Configuration files (the selection list, project_names.tsv)
 REM   are data, not code. They live beside this wrapper.
@@ -41,8 +42,13 @@ REM weighting. Usually the corpus owner. Leave empty to let a
 REM document with exactly one non-AI speaker resolve itself.
 set "SUBJECT=Nick"
 
-REM Optional: a word list used to veto keyword rejections.
-REM Leave empty to rely on corpus frequency and capitalisation.
+REM Optional: this corpus's own glossaries -- invented terms, place names,
+REM character names. Anything listed there is protected from the keyword
+REM artifact filter. The pipeline's own lexicon folder is used automatically
+REM in addition to this one.
+set "GLOSSARIES=%~dp0glossaries"
+
+REM Optional: a single standalone word list, if you have one.
 set "DICTIONARY="
 
 REM Optional: mirroring selected AI conversations into this
@@ -61,6 +67,8 @@ set "DRYRUN="
 if /i "%~1"=="--push"    set "DO_PUSH=1"
 if /i "%~1"=="--sync"    set "DO_SYNC=1"
 if /i "%~1"=="--dry-run" set "DRYRUN=--dry-run"
+set "DO_AUDIT="
+if /i "%~1"=="--audit" set "DO_AUDIT=1"
 if /i "%~1"=="--all" (
     set "DO_PUSH=1"
     set "DO_SYNC=1"
@@ -90,6 +98,8 @@ if not exist "%CORPUS_ROOT%\1-Raw" (
 set "OPTS="
 if not "%SUBJECT%"==""    set "OPTS=%OPTS% --subject "%SUBJECT%""
 if not "%DICTIONARY%"=="" set "OPTS=%OPTS% --dictionary "%DICTIONARY%""
+if not "%GLOSSARIES%"=="" if exist "%GLOSSARIES%" set "OPTS=%OPTS% --lexicon "%GLOSSARIES%""
+if defined DO_AUDIT set "OPTS=%OPTS% --report-artifacts "%CORPUS_ROOT%\_rejected-keywords.md""
 
 for %%I in ("%CORPUS_ROOT%") do set "CORPUS_NAME=%%~nxI"
 
@@ -150,6 +160,12 @@ echo   %CORPUS_NAME%: done.
 echo.
 echo   The stale check and self-check above REPORT only. Nothing
 echo   is ever deleted automatically. Deletion is yours.
+if defined DO_AUDIT (
+    echo.
+    echo   Rejected keywords: %CORPUS_ROOT%\_rejected-keywords.md
+    echo   Read it. Anything in there that is a real word is a false
+    echo   positive, and belongs in your glossaries folder.
+)
 echo ============================================================
 pause
 exit /b 0

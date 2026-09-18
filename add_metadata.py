@@ -42,6 +42,8 @@ from pathlib import Path
 # Patterns
 # ---------------------------------------------------------------------------
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+
 FRONTMATTER_RE  = re.compile(r"\A---\n(.*?)\n---\n?", re.DOTALL)
 HEADING_RE      = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.MULTILINE)
 WORD_RE         = re.compile(r"[A-Za-z][A-Za-z'-]{2,}")
@@ -628,26 +630,49 @@ def _longest_consonant_run(term: str) -> int:
     return longest
 
 
-def is_hard_artifact(term: str) -> bool:
-    """Shapes no English word takes. Safe to reject with no other evidence."""
+def hard_artifact_reason(term: str) -> str:
+    """Why this is a shape no English word takes, or "" if it is not.
+
+    A reason rather than a boolean, so the audit report can say what fired.
+    A filter nobody can inspect is a filter nobody should trust.
+    """
     letters = [c for c in term if c.isalpha()]
     if not letters:
-        return True
-    # Letters and digits mashed together.
+        return "no letters"
     if any(c.isdigit() for c in term) and any(c.isalpha() for c in term):
-        return True
-    # No vowel anywhere, counting `w` as one so Welsh vocabulary survives.
+        return "letters mixed with digits"
     if len(letters) >= 4 and not any(c in VOWELS_LOOSE for c in letters):
-        return True
-    # `q` without a following `u`.
+        return "no vowel (counting w)"
     for i, c in enumerate(term):
         if c == "q" and (i + 1 >= len(term) or term[i + 1] != "u"):
-            return True
-    # The same letter three times running.
+            return "q not followed by u"
     for i in range(len(term) - 2):
         if term[i] == term[i + 1] == term[i + 2] and term[i].isalpha():
-            return True
-    return _longest_consonant_run(term) >= CONSONANT_RUN_HARD
+            return f"{term[i]!r} three times running"
+    run = _longest_consonant_run(term)
+    if run >= CONSONANT_RUN_HARD:
+        return f"{run}-consonant run"
+    return ""
+
+
+def is_hard_artifact(term: str) -> bool:
+    """Shapes no English word takes. Safe to reject with no other evidence."""
+    return bool(hard_artifact_reason(term))
+
+
+def soft_artifact_reason(term: str) -> str:
+    """Why this looks implausible, or "" if it does not."""
+    letters = "".join(c for c in term if c.isalpha())
+    if len(letters) < 4:
+        return ""
+    for i in range(len(letters) - 1):
+        pair = letters[i:i + 2]
+        if pair in IMPOSSIBLE_BIGRAMS:
+            return f"implausible letter pair {pair!r}"
+    run = _longest_consonant_run(term)
+    if run >= CONSONANT_RUN_SOFT:
+        return f"{run}-consonant run"
+    return ""
 
 
 def is_soft_artifact(term: str) -> bool:
@@ -657,13 +682,7 @@ def is_soft_artifact(term: str) -> bool:
     principle contain one of these pairs, and losing a real term costs more
     than keeping an artifact.
     """
-    letters = "".join(c for c in term if c.isalpha())
-    if len(letters) < 4:
-        return False
-    for i in range(len(letters) - 1):
-        if letters[i:i + 2] in IMPOSSIBLE_BIGRAMS:
-            return True
-    return _longest_consonant_run(term) >= CONSONANT_RUN_SOFT
+    return bool(soft_artifact_reason(term))
 
 
 def load_dictionary(path) -> set[str]:
@@ -675,6 +694,129 @@ def load_dictionary(path) -> set[str]:
     return {line.strip().lower() for line in text.splitlines() if line.strip()}
 
 
+# Lexicon files. A `.txt` is one term per line; a `.tsv` takes the term from
+# the first column and ignores the rest, so metadata columns (source, kind,
+# note) can be carried without the loader needing to understand them.
+LEXICON_SUFFIXES = (".txt", ".tsv", ".lst")
+
+
+def load_lexicon_dir(directory) -> tuple[set[str], list[str]]:
+    """Merge every word list in a directory. Returns (terms, files_read).
+
+    Two kinds of file belong here and are treated identically:
+
+      * language lexicons -- general vocabulary, shipped with the pipeline
+      * project glossaries -- a corpus's own invented terms and names, kept
+        beside its wrapper
+
+    The second kind is the one that matters most. `Erlking`, `Cernunnos`,
+    `crwth` and `Brigit` are exactly the terms most at risk from any filter and
+    least likely to appear in a general word list. Merging both into one set
+    means the filter cannot tell them apart, which is the point: both are real
+    words as far as this corpus is concerned.
+    """
+    directory = Path(directory)
+    terms: set[str] = set()
+    read: list[str] = []
+    if not directory.is_dir():
+        return terms, read
+    for path in sorted(directory.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in LEXICON_SUFFIXES:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        before = len(terms)
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            # First column only; anything after a tab is metadata.
+            term = line.split("\t", 1)[0].strip().lower()
+            if term:
+                terms.add(term)
+        read.append(f"{path.name} (+{len(terms) - before:,})")
+    return terms, read
+
+
+def load_lexicons(dirs, dictionary_file=None) -> tuple[set[str], list[str]]:
+    """Merge every lexicon directory, plus one optional standalone word list."""
+    terms: set[str] = set()
+    read: list[str] = []
+    for d in dirs or []:
+        found, files = load_lexicon_dir(d)
+        terms |= found
+        read.extend(files)
+    if dictionary_file:
+        found = load_dictionary(dictionary_file)
+        if found:
+            terms |= found
+            read.append(f"{Path(dictionary_file).name} (+{len(found):,})")
+    return terms, read
+
+
+def write_artifact_report(path, entries: list, root=None) -> None:
+    """Write every rejected keyword, with the test that rejected it.
+
+    The report exists so the filter can be judged against real data rather than
+    against the fixtures it was built with. Terms are grouped so a term dropped
+    across many documents reads as one decision, not as many.
+    """
+    from collections import defaultdict
+    grouped: dict[tuple[str, str, str], list] = defaultdict(list)
+    for term, tier, reason, src in entries:
+        grouped[(term.lower(), tier, reason)].append(src)
+
+    hard = sorted(k for k in grouped if k[1] == "hard")
+    soft = sorted(k for k in grouped if k[1] == "soft")
+
+    lines = ["# Rejected keywords", "",
+             f"{len(grouped):,} distinct term(s) rejected across "
+             f"{len({e[3] for e in entries}):,} file(s).", "",
+             "Every term below was dropped from a keyword list. Read it as a",
+             "proposal, not a result: anything here that is a real word is a",
+             "false positive, and the test that caught it should be tightened",
+             "or removed.", ""]
+
+    def section(title: str, keys: list, note: str) -> None:
+        lines.append(f"## {title} ({len(keys):,})")
+        lines.append("")
+        lines.append(note)
+        lines.append("")
+        if not keys:
+            lines.append("None.")
+            lines.append("")
+            return
+        lines.append("| Term | Why | Files |")
+        lines.append("|---|---|---|")
+        for key in keys:
+            term, _tier, reason = key
+            srcs = grouped[key]
+            shown = srcs[0]
+            try:
+                shown = Path(shown).relative_to(root) if root else Path(shown).name
+            except (ValueError, TypeError):
+                shown = Path(str(shown)).name
+            extra = f" +{len(srcs) - 1} more" if len(srcs) > 1 else ""
+            lines.append(f"| `{term}` | {reason} | {shown}{extra} |")
+        lines.append("")
+
+    section("Hard rejections", hard,
+            "Shapes no English word takes. These should all be debris. A real "
+            "word here is a bug in the hard tests.")
+    section("Soft rejections", soft,
+            "Implausible letter sequences, rejected because no dictionary, "
+            "capitalisation or corpus frequency vetoed them. **This is the "
+            "tier to judge.** If real words appear here, supply a lexicon or "
+            "drop the soft tier.")
+
+    try:
+        Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except OSError as e:
+        print(f"  [warn] could not write artifact report: {e}")
+
+
 def find_system_dictionary() -> Path | None:
     """A word list in one of the usual places, if there is one."""
     for candidate in ("/usr/share/dict/words", "/usr/dict/words",
@@ -682,45 +824,69 @@ def find_system_dictionary() -> Path | None:
         path = Path(candidate)
         if path.is_file():
             return path
-    local = SCRIPT_DIR / "words.txt" if "SCRIPT_DIR" in globals() else None
-    if local is not None and local.is_file():
-        return local
-    return None
+    local = SCRIPT_DIR / "words.txt"
+    return local if local.is_file() else None
+
+
+# Characters that can precede a capital without the capital meaning anything:
+# sentence terminators, list and heading markers, table cells, quote marks.
+_SENTENCE_START_BEFORE = set(".!?:;\n\r#-*>|\"\u201c\u2018([")
 
 
 def capitalized_terms(body: str) -> set[str]:
-    """Lowercased forms of every word that appears capitalised in the body.
+    """Lowercased forms of words that appear capitalised MID-SENTENCE.
 
     A capitalised term is probably a name -- Loom, Cernunnos, Brigit -- and the
-    corpus is full of them. They will not be in any dictionary, so they must
-    never be rejected for that reason alone.
+    corpus is full of them. They will not be in any general word list, so they
+    must never be rejected for being absent from one.
+
+    Sentence-initial capitals are excluded, because every sentence has one and
+    they say nothing about the word. Counting them made `the` look like a
+    proper noun and protected a piece of conversion debris that happened to
+    open a sentence.
     """
     out: set[str] = set()
-    for match in WORD_RE.findall(body):
-        if match[:1].isupper():
-            out.add(match.lower())
+    for match in WORD_RE.finditer(body):
+        word = match.group(0)
+        if not word[:1].isupper():
+            continue
+        # Walk back over whitespace to the previous meaningful character.
+        i = match.start() - 1
+        while i >= 0 and body[i] in " \t":
+            i -= 1
+        if i < 0 or body[i] in _SENTENCE_START_BEFORE:
+            continue          # sentence-initial: carries no information
+        out.add(word.lower())
     return out
 
 
 def reject_artifacts(terms, body: str = "", dictionary: set[str] | None = None,
-                     doc_freq: dict | None = None) -> tuple[list[str], list[str]]:
-    """Split candidate keywords into (kept, rejected)."""
+                     doc_freq: dict | None = None
+                     ) -> tuple[list[str], list[tuple[str, str, str]]]:
+    """Split candidate keywords into (kept, rejected).
+
+    Each rejection carries (term, tier, reason) so the audit report can show
+    exactly why a term was dropped and which test did it.
+    """
     names = capitalized_terms(body) if body else set()
     kept: list[str] = []
-    rejected: list[str] = []
+    rejected: list[tuple[str, str, str]] = []
     for term in terms:
         base = term.lower()
-        if is_hard_artifact(base):
-            rejected.append(term)
+
+        hard = hard_artifact_reason(base)
+        if hard:
+            rejected.append((term, "hard", hard))
             continue
-        if not is_soft_artifact(base):
+
+        soft = soft_artifact_reason(base)
+        if not soft:
             kept.append(term)
             continue
+
         # Soft suspicion. Any of these vetoes the rejection.
-        if dictionary and base in dictionary:
-            kept.append(term)
-            continue
-        if base.replace("-", "") in (dictionary or set()):
+        if dictionary and (base in dictionary
+                           or base.replace("-", "") in dictionary):
             kept.append(term)
             continue
         if base in names:
@@ -729,7 +895,7 @@ def reject_artifacts(terms, body: str = "", dictionary: set[str] | None = None,
         if doc_freq and doc_freq.get(base, 0) >= ARTIFACT_DF_FLOOR:
             kept.append(term)
             continue
-        rejected.append(term)
+        rejected.append((term, "soft", soft))
     return kept, rejected
 
 
@@ -982,7 +1148,8 @@ def process_file(path: Path, n_keywords: int | None, write_index: bool,
                  total_docs: int = 0,
                  subject_names: set[str] | None = None,
                  stats: Counter | None = None,
-                 dictionary: set[str] | None = None) -> bool:
+                 dictionary: set[str] | None = None,
+                 artifact_log: list | None = None) -> bool:
     """Update the file in place. Return True if anything changed.
 
     When `doc_freq` and `total_docs` are provided (the corpus-aware mode used
@@ -1027,8 +1194,14 @@ def process_file(path: Path, n_keywords: int | None, write_index: bool,
                                        dictionary=dictionary,
                                        doc_freq=doc_freq)
         kw = kw[:actual_n]
-        if stats is not None and dropped:
-            stats["artifacts_rejected"] += len(dropped)
+        if dropped:
+            if stats is not None:
+                stats["artifacts_rejected"] += len(dropped)
+                for _term, tier, _reason in dropped:
+                    stats[f"artifacts_{tier}"] += 1
+            if artifact_log is not None:
+                for term, tier, reason in dropped:
+                    artifact_log.append((term, tier, reason, path))
 
     if stats is not None:
         stats[f"structure_{structure}"] += 1
@@ -1108,7 +1281,8 @@ def report_structure_stats(stats: Counter, unknown_files: list,
     print(f"  keywords weighted: {stats['keywords_weighted']:>6,}")
     print(f"  keywords plain   : {stats['keywords_unweighted']:>6,}")
     if stats["artifacts_rejected"]:
-        print(f"  artifacts dropped: {stats['artifacts_rejected']:>6,}")
+        print(f"  artifacts dropped: {stats['artifacts_rejected']:>6,} "
+              f"({stats['artifacts_hard']:,} hard, {stats['artifacts_soft']:,} soft)")
     if stats["weighting_blocked"]:
         print(f"  [info] {stats['weighting_blocked']} conversational file(s) "
               f"could not be weighted; pass --subject to name the subject.")
@@ -1146,6 +1320,13 @@ def main() -> int:
                          "rejections. Without one, a statistically odd term is "
                          "kept when it recurs across documents or appears "
                          "capitalised. A system word list is used if found.")
+    ap.add_argument("--lexicon", action="append", default=None,
+                    help="Directory of word lists and glossaries (repeatable). "
+                         "Every .txt/.tsv/.lst under it is merged. A .tsv takes "
+                         "its term from the first column.")
+    ap.add_argument("--report-artifacts", default=None,
+                    help="Write every rejected keyword, and the test that "
+                         "rejected it, to this Markdown file. Changes nothing.")
     ap.add_argument("--no-dictionary", action="store_true",
                     help="Do not look for a system word list.")
     ap.add_argument("--subject", action="append", default=None,
@@ -1158,15 +1339,22 @@ def main() -> int:
     subject_names = ({s.lower() for s in args.subject}
                      if args.subject else None)
 
-    dictionary: set[str] | None = None
-    if not args.no_dictionary:
-        dict_path = Path(args.dictionary) if args.dictionary else find_system_dictionary()
-        if dict_path is not None:
-            dictionary = load_dictionary(dict_path)
-            print(f"Dictionary: {dict_path} ({len(dictionary):,} words)"
-                  if dictionary else f"Dictionary: {dict_path} (unreadable)")
-        elif args.dictionary:
-            print(f"Dictionary: {args.dictionary} not found")
+    lexicon_dirs = list(args.lexicon or [])
+    if not lexicon_dirs and (SCRIPT_DIR / "lexicon").is_dir():
+        lexicon_dirs.append(SCRIPT_DIR / "lexicon")
+    dict_file = args.dictionary
+    if dict_file is None and not args.no_dictionary:
+        found = find_system_dictionary()
+        dict_file = str(found) if found else None
+
+    dictionary, lex_files = load_lexicons(lexicon_dirs, dict_file)
+    dictionary = dictionary or None
+    if lex_files:
+        print(f"Lexicon: {len(dictionary):,} terms from {len(lex_files)} file(s)")
+        for entry in lex_files[:10]:
+            print(f"  {entry}")
+        if len(lex_files) > 10:
+            print(f"  ... and {len(lex_files) - 10} more")
 
     root = Path(args.path)
     if root.is_file():
@@ -1192,19 +1380,23 @@ def main() -> int:
     changed = 0
     stats: Counter = Counter()
     unknown_files: list[Path] = []
+    artifact_log: list = [] if args.report_artifacts else None
     for f in files:
         before = stats["structure_unknown"]
         if process_file(f, n_keywords=args.keywords,
                         write_index=not args.no_index,
                         doc_freq=doc_freq, total_docs=total_docs,
                         subject_names=subject_names, stats=stats,
-                        dictionary=dictionary):
+                        dictionary=dictionary, artifact_log=artifact_log):
             changed += 1
         if stats["structure_unknown"] > before:
             unknown_files.append(f)
 
     print(f"Processed {len(files)} file(s); updated {changed}.")
     report_structure_stats(stats, unknown_files, root)
+    if args.report_artifacts and artifact_log is not None:
+        write_artifact_report(args.report_artifacts, artifact_log, root)
+        print(f"Rejected-keyword report written to {args.report_artifacts}")
     return 0
 
 

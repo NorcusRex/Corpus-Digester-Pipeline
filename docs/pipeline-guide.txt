@@ -14,7 +14,7 @@ and belong beside a corpus's marshaling wrapper in its _Tools folder.
       that Claude's data export does not preserve. Detected by content shape
       (project_uuid + conversations), never by filename, so it can sit anywhere
       inside an export. Its format contract is project-manifest-format.md,
-      shipped beside this readme. Unknown keys are ignored, so a manifest from a
+      shipped in references/. Unknown keys are ignored, so a manifest from a
       newer format revision is read without complaint.
 
       Note it deliberately does NOT follow the corpus filename convention. It is

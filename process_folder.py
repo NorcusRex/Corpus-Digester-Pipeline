@@ -593,6 +593,12 @@ def main() -> int:
     ap.add_argument("--dictionary", default=None,
                     help="Word list used to veto keyword rejections. A system "
                          "word list is used if one is found.")
+    ap.add_argument("--lexicon", action="append", default=None,
+                    help="Directory of word lists and glossaries (repeatable). "
+                         "Used to veto keyword rejections.")
+    ap.add_argument("--report-artifacts", default=None,
+                    help="Write every rejected keyword and the test that "
+                         "rejected it to this Markdown file.")
     ap.add_argument("--no-dictionary", action="store_true",
                     help="Do not look for a system word list.")
     ap.add_argument("--subject", action="append", default=None,
@@ -638,12 +644,15 @@ def main() -> int:
                    if args.corpus_root else src_root.parent)
     subject_names = ({n.lower() for n in args.subject}
                      if args.subject else None)
-    dictionary = None
-    if not args.no_dictionary:
-        dict_path = (Path(args.dictionary) if args.dictionary
-                     else add_metadata.find_system_dictionary())
-        if dict_path is not None:
-            dictionary = add_metadata.load_dictionary(dict_path)
+    lexicon_dirs = list(args.lexicon or [])
+    if not lexicon_dirs and (SCRIPT_DIR / "lexicon").is_dir():
+        lexicon_dirs.append(SCRIPT_DIR / "lexicon")
+    dict_file = args.dictionary
+    if dict_file is None and not args.no_dictionary:
+        found = add_metadata.find_system_dictionary()
+        dict_file = str(found) if found else None
+    dictionary, lex_files = add_metadata.load_lexicons(lexicon_dirs, dict_file)
+    dictionary = dictionary or None
 
     if not src_root.is_dir():
         print(f"ERROR: input is not a directory: {src_root}", file=sys.stderr)
@@ -846,9 +855,13 @@ def main() -> int:
             print(f"  scanning {len(md_files)} files for TF-IDF corpus stats...")
             doc_freq, total_docs = add_metadata.build_corpus_doc_freq(md_files)
             print(f"  vocabulary: {len(doc_freq)} unique terms in {total_docs} files")
+        if dictionary:
+            print(f"  lexicon: {len(dictionary):,} terms from "
+                  f"{len(lex_files)} file(s)")
         changed = 0
         meta_stats: Counter = Counter()
         unknown_files: list[Path] = []
+        artifact_log: list = [] if args.report_artifacts else None
         for f in md_files:
             try:
                 before = meta_stats["structure_unknown"]
@@ -858,7 +871,8 @@ def main() -> int:
                                              total_docs=total_docs,
                                              subject_names=subject_names,
                                              stats=meta_stats,
-                                             dictionary=dictionary):
+                                             dictionary=dictionary,
+                                             artifact_log=artifact_log):
                     changed += 1
                 if meta_stats["structure_unknown"] > before:
                     unknown_files.append(f)
@@ -869,6 +883,10 @@ def main() -> int:
         # Every `unknown` file is reported. They are candidates for an AI pass
         # to recover turns, or for the owner to find the source conversation.
         add_metadata.report_structure_stats(meta_stats, unknown_files, out_root)
+        if args.report_artifacts and artifact_log is not None:
+            add_metadata.write_artifact_report(args.report_artifacts,
+                                               artifact_log, out_root)
+            print(f"  rejected-keyword report: {args.report_artifacts}")
         stats.update(meta_stats)
 
     # ---- NotebookLM sidecars --------------------------------------------
