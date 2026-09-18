@@ -185,6 +185,10 @@ class DigestedIndex:
         self.frontmatter: dict[Path, dict] = {}
         self.source_files: set[str] = set()
         self.source_paths: set[str] = set()
+        # Content identity of the sources, so a renamed original is still
+        # recognised as accounted for.
+        self.source_hashes: set[str] = set()
+        self.source_sizes: set[int] = set()
         self.output_dirs: set[str] = {
             f.parent.relative_to(digested_root).as_posix() for f in self.files
         }
@@ -202,6 +206,12 @@ class DigestedIndex:
             sp = str(fm.get("source_path", "") or "").strip()
             if sp:
                 self.source_paths.add(sp.replace("\\", "/").lower())
+            digest = str(fm.get(add_metadata.SOURCE_HASH_FIELD, "") or "").strip().lower()
+            if digest:
+                self.source_hashes.add(digest)
+            size = fm.get(add_metadata.SOURCE_SIZE_FIELD)
+            if isinstance(size, int):
+                self.source_sizes.add(size)
 
     def accounts_for(self, raw_file: Path, raw_root: Path) -> bool:
         """True if this raw file has a counterpart in the digested tree."""
@@ -227,9 +237,20 @@ class DigestedIndex:
             corpus_rel = ""
         if corpus_rel and corpus_rel in self.source_paths:
             return True
-        # Last resort: the same filename somewhere in the tree. Weaker than a
-        # path match, but a real counterpart rather than a silent drop.
-        return raw_file.name.lower() in self.names
+        # The same filename somewhere in the tree. Weaker than a path match,
+        # but a real counterpart rather than a silent drop.
+        if raw_file.name.lower() in self.names:
+            return True
+        # Finally, by content. A renamed source is not a missing one, and a
+        # name match is not available once it has been renamed. Size is checked
+        # first so only a plausible candidate is ever hashed.
+        try:
+            size = raw_file.stat().st_size
+        except OSError:
+            return False
+        if size not in self.source_sizes:
+            return False
+        return add_metadata.file_sha256(raw_file) in self.source_hashes
 
 
 # ---------------------------------------------------------------------------

@@ -338,6 +338,9 @@ def write_unconvertible_sidecar(src: Path, out_dir: Path, allocated: set,
         "file_type":   ext,
         "size_bytes":  size,
     }
+    # Same source identity the converted files carry, so a renamed original is
+    # recognisable here too.
+    add_metadata.stamp_source_identity(fm, src)
     body = (
         f"# {src.name}\n\n"
         f"This file could not be converted to Markdown. The original stays in "
@@ -436,12 +439,14 @@ def process_file(src: Path, src_root: Path, out_root: Path,
             md_path = claim_output_path(out_dir / f"{stem}.md", allocated)
             basename = md_path.stem  # tracks the .md filename if disambiguated
             fm, body = docx_to_markdown.convert_docx(src, out_dir, basename)
+            add_metadata.stamp_source_identity(fm, src)
             write_md(md_path, fm, body, docx_to_markdown.to_yaml_frontmatter)
             stats["docx"] += 1
             return "docx"
 
         if suffix == ".xlsx":
             fm, body = xlsx_to_markdown.convert_xlsx(src)
+            add_metadata.stamp_source_identity(fm, src)
             md_path = claim_output_path(out_dir / f"{stem}.md", allocated)
             write_md(md_path, fm, body, xlsx_to_markdown.to_yaml_frontmatter)
             stats["xlsx"] += 1
@@ -454,6 +459,7 @@ def process_file(src: Path, src_root: Path, out_root: Path,
             md_path = claim_output_path(out_dir / f"{stem}.md", allocated)
             basename = md_path.stem
             fm, body = pdf_to_markdown.convert_pdf(src, out_dir, basename)
+            add_metadata.stamp_source_identity(fm, src)
             write_md(md_path, fm, body, pdf_to_markdown.to_yaml_frontmatter)
             stats["pdf"] += 1
             return "pdf"
@@ -462,12 +468,14 @@ def process_file(src: Path, src_root: Path, out_root: Path,
             md_path = claim_output_path(out_dir / f"{stem}.md", allocated)
             basename = md_path.stem
             fm, body = html_to_markdown.convert_html(src, out_dir, basename)
+            add_metadata.stamp_source_identity(fm, src)
             write_md(md_path, fm, body, html_to_markdown.to_yaml_frontmatter)
             stats["html"] += 1
             return "html"
 
         if suffix == ".rtf":
             fm, body = rtf_to_markdown.convert_rtf(src)
+            add_metadata.stamp_source_identity(fm, src)
             md_path = claim_output_path(out_dir / f"{stem}.md", allocated)
             write_md(md_path, fm, body, rtf_to_markdown.to_yaml_frontmatter)
             stats["rtf"] += 1
@@ -527,6 +535,7 @@ def process_file(src: Path, src_root: Path, out_root: Path,
 
         if suffix == ".txt":
             fm, body = wrap_plaintext(src)
+            add_metadata.stamp_source_identity(fm, src)
             md_path = claim_output_path(out_dir / f"{stem}.md", allocated)
             write_md(md_path, fm, body, docx_to_markdown.to_yaml_frontmatter)
             stats["txt"] += 1

@@ -22,6 +22,18 @@ Three conditions are detected:
    older converter version that can't be cross-checked against the
    current export structure.
 
+**A renamed source is not a missing one.** Matching by filename cannot tell a
+deleted source from a renamed one, and a spelling fix to a source filename
+would otherwise orphan perfectly good output. Where a digested file records its
+source's `source_sha256` and `source_bytes`, an absent source is searched for
+by content before being reported: same bytes under a different name is a
+RENAME, reported with both names and never deleted.
+
+The search is cheap because size is checked first -- only raw files of exactly
+the recorded size are hashed, rather than the whole tree. Files digested before
+these fields existed simply have nothing to match on and fall through to the
+reporting below.
+
 **An absent source is not evidence of stale output.** From the digested side,
 "the source was deleted upstream" and "the source was removed on purpose"
 look identical. Both produce a digested file whose source cannot be found,
@@ -80,6 +92,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -138,6 +151,83 @@ def parse_frontmatter(text: str) -> dict:
             val = val[1:-1].replace('\\"', '"').replace("\\\\", "\\")
         fm[key] = val
     return fm
+
+
+def file_sha256(path: Path, chunk: int = 1 << 20) -> str:
+    """SHA-256 of a file's bytes, streamed. Empty string if unreadable.
+
+    Kept local rather than imported, so this script stays runnable on its own
+    -- the same reason parse_frontmatter above is a local simplification.
+    """
+    h = hashlib.sha256()
+    try:
+        with path.open("rb") as f:
+            for block in iter(lambda: f.read(chunk), b""):
+                h.update(block)
+    except OSError:
+        return ""
+    return h.hexdigest()
+
+
+def resolve_renames(absent: list[tuple[Path, str]], raw_dir: Path
+                    ) -> tuple[list[tuple[Path, str, str]], list[tuple[Path, str]]]:
+    """Split absent-source files into (renamed, still_absent).
+
+    A digested file carrying `source_sha256` whose bytes turn up in the raw
+    tree under another name was not orphaned -- its source was renamed. Size is
+    matched first so only genuine size-matches are hashed.
+    """
+    wanted: dict[Path, tuple[int, str]] = {}
+    for md_path, _reason in absent:
+        try:
+            head = md_path.open(encoding="utf-8").read(4096)
+        except OSError:
+            continue
+        fm = parse_frontmatter(head)
+        digest = str(fm.get("source_sha256", "") or "").strip().lower()
+        size_raw = str(fm.get("source_bytes", "") or "").strip()
+        if not digest or not size_raw.isdigit():
+            continue
+        wanted[md_path] = (int(size_raw), digest)
+
+    if not wanted:
+        return [], list(absent)
+
+    # Only sizes we are actually looking for. Stat is cheap; hashing is not.
+    sizes_wanted = {size for size, _ in wanted.values()}
+    by_size: dict[int, list[Path]] = {}
+    for candidate in raw_dir.rglob("*"):
+        try:
+            if not candidate.is_file():
+                continue
+            size = candidate.stat().st_size
+        except OSError:
+            continue
+        if size in sizes_wanted:
+            by_size.setdefault(size, []).append(candidate)
+
+    hash_cache: dict[Path, str] = {}
+    renamed: list[tuple[Path, str, str]] = []
+    still_absent: list[tuple[Path, str]] = []
+
+    for md_path, reason in absent:
+        target = wanted.get(md_path)
+        if target is None:
+            still_absent.append((md_path, reason))
+            continue
+        size, digest = target
+        match = None
+        for candidate in by_size.get(size, []):
+            if candidate not in hash_cache:
+                hash_cache[candidate] = file_sha256(candidate)
+            if hash_cache[candidate] == digest:
+                match = candidate
+                break
+        if match is not None:
+            renamed.append((md_path, reason, match.name))
+        else:
+            still_absent.append((md_path, reason))
+    return renamed, still_absent
 
 
 def build_raw_index(raw_dir: Path, verbose: bool = False) -> tuple[set[str], set[str]]:
@@ -371,13 +461,31 @@ def main() -> int:
     print(f"    orphan      : {len(by_status['orphan']):>6,}  (no recognizable source)")
     print(f"    no-fm       : {len(by_status['no-fm']):>6,}  (no frontmatter)")
     print()
+    print("  Resolving absent sources by content before reporting them...")
 
     # Source absent = the source cannot be found. NOT evidence of staleness:
     # it reads the same whether the source was deleted upstream or cleared on
     # purpose after digestion. Reported always, deleted only on demand.
     source_absent = by_status["absent-file"] + by_status["absent-conv"]
+
+    # Before reporting anything absent, look for it under another name. A
+    # source that was renamed is not a source that was lost.
+    renamed: list[tuple[Path, str, str]] = []
+    if source_absent:
+        renamed, source_absent = resolve_renames(source_absent, raw_dir)
+
     # Orphans = unverifiable; only deleted if --delete-orphans is set.
     orphans = by_status["orphan"] + by_status["no-fm"]
+
+    if renamed:
+        print(f"  Renamed sources ({len(renamed)}): the source is present under")
+        print("  a different name, so nothing was lost. Re-run the pipeline to")
+        print("  refresh these, then remove the superseded output.")
+        for path, reason, new_name in renamed:
+            old_name = reason.split(": ", 1)[-1]
+            print(f"    {path.relative_to(digested_dir)}")
+            print(f"      {old_name}  ->  {new_name}")
+        print()
 
     # Print the actual paths so the user can decide what to do.
     if source_absent:
@@ -401,6 +509,10 @@ def main() -> int:
         print()
 
     if not source_absent and not orphans:
+        if renamed:
+            print("  No source-absent or orphan files. The renames above are the")
+            print("  only finding, and nothing there needs deleting.")
+            return 1
         print("  No source-absent or orphan files found. Nothing to clean.")
         return 0
 

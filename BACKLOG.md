@@ -183,6 +183,20 @@ a small set of passages. Neither is needed for the ranking to work.
 
 ## Findings not yet decisions
 
+### Source identity only populates on re-digestion
+**Owner: Nick, whenever the next full run happens.**
+
+`source_sha256` and `source_bytes` are written at digestion time, so existing
+digested output does not carry them. Until a re-run, a renamed source still
+reports as absent rather than as a rename — correctly, since there is nothing
+to match on. No action needed beyond knowing why the first run after this
+change reports differently from the one before it.
+
+Found the hard way: `Creatures (Abortions)：  Undead.docx` was reported as
+having no source in `1-Raw`, when the raw file had simply been renamed to
+`Creatures (Aberrations)：  Undead.docx`. Under the old delete behaviour a
+spelling fix would have destroyed good output.
+
 ### The pipeline does not write `date`
 **Owner: Nick to rule on the source of truth, Assistant to build.**
 

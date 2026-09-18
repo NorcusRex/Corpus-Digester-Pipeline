@@ -31,6 +31,7 @@ Usage
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 from collections import Counter
 from datetime import datetime, timezone
@@ -563,6 +564,43 @@ def build_corpus_doc_freq(md_files: list) -> tuple[dict, int]:
 # ---------------------------------------------------------------------------
 # Frontmatter parse / emit
 # ---------------------------------------------------------------------------
+
+# Identity of a converted file's source, recorded at digestion time.
+#
+# Matching a digested file to its source by FILENAME breaks the moment the
+# source is renamed: the digested output then looks orphaned, when in fact
+# nothing was lost. Recording the source's size and content hash lets a rename
+# be reported as a rename. Size is stored alongside the hash so a search can
+# filter on it first and hash only the few candidates that could match, rather
+# than hashing a whole raw tree.
+
+SOURCE_HASH_FIELD = "source_sha256"
+SOURCE_SIZE_FIELD = "source_bytes"
+
+
+def file_sha256(path, chunk: int = 1 << 20) -> str:
+    """SHA-256 of a file's bytes, streamed. Empty string if unreadable."""
+    h = hashlib.sha256()
+    try:
+        with open(path, "rb") as f:
+            for block in iter(lambda: f.read(chunk), b""):
+                h.update(block)
+    except OSError:
+        return ""
+    return h.hexdigest()
+
+
+def stamp_source_identity(fm: dict, src) -> dict:
+    """Record `source_bytes` and `source_sha256` for a converted file."""
+    try:
+        fm[SOURCE_SIZE_FIELD] = src.stat().st_size
+    except OSError:
+        pass
+    digest = file_sha256(src)
+    if digest:
+        fm[SOURCE_HASH_FIELD] = digest
+    return fm
+
 
 # Sidecars stand in for a file the pipeline cannot convert. Their body is
 # boilerplate, so keywords come from the original's name and path instead --
