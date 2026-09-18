@@ -1,0 +1,49 @@
+# Mapping of ChatGPT Project IDs to human-readable names.
+# Format: <project_id>\t<human_name> (TAB between, not spaces)
+# Lines starting with # are comments; blank lines are ignored.
+#
+# WARNING about line 19: there are TWO different projects called "Science"
+# in your ChatGPT account. The one shown in the sidebar
+# (g-p-69b9dfa338c08191a6071fc5b4f806d1) was visible at line 4. The one
+# from your popup menu (g-p-69950723572481919d6c0ac268e706f1) is below
+# tagged "(Recents)". Decide which is which when you visit them and
+# rename here so you don't get two folders with the same name.
+
+g-p-67f8deab3a0c819189bcc16e697ccd67	RPG: The Loom
+g-p-67f8f4b93e648191bfa46a3845719182	RPG Theory
+g-p-68a1721c65808191ad21fc1b7db68909	AI
+g-p-69b9dfa338c08191a6071fc5b4f806d1	Science
+g-p-686b8b9a278881918dce1b0212a53bd0	Philosophy
+g-p-69ae2141be28819187df875acb6fc94d	Taxes
+g-p-67f8f6c61cf88191a3768c5e7df454dc	Health - Misc
+g-p-67f8dd1a45dc8191a1e1841f05199b24	LCOG - RLID v4
+g-p-67f8f2abd3988191aa29b10336c83575	RPG - Nick's D&D 5e Campaign
+g-p-67f8f7aecb388191b1a9b787f8a6aa4f	RPG - Chris's Black Yak Campaign
+g-p-67f8fafcccdc8191b0b84b1a4a5cbeb9	RPG AI
+g-p-67f8fd1b712481919c58b54a6406d15c	RPG Art AI
+g-p-6833f4272a2481918e8fc734e40a79c4	Investing
+g-p-67f8f6984a6c8191a94e12b280659ca4	RPG Mechanics
+g-p-686b8e9f72e4819195f33857a8a39990	Psychology
+g-p-6909a52141408191852454663db4fa76	Excel
+g-p-68a1775621588191a72bb4e2d1baf5a1	ChatGPT Help
+g-p-699508abea08819184a61a54812b6f76	Cooking
+g-p-69950723572481919d6c0ac268e706f1	Science (Recents)
+g-p-699506007d508191aeff6b1344c90299	Discord
+g-p-6980f8148ed88191ae3a4d5cb185d1f1	RPG - Tension
+g-p-686b8df9f38881918887618698cf8721	Futurism
+g-p-696b755ca35881918c37efac3bcea5f1	RPG - Misc
+g-p-67f8f61765b48191b3823112daf83ec3	Politics
+g-p-69587425bf248191806355f7362da4fe	Mathematics
+g-p-694290bc4d608191825da1eb8ca95c71	RPG - Legend in the Mist
+g-p-695873af1f2081919a4364dec9b106e4	RPG - No GM
+g-p-693fd54179d481918136f1bdd5a66e95	LCOG - WAPO
+g-p-69387d7390608191bf9825503cd89219	Games
+g-p-67f8f6d6a9c48191bfb54ad809eb6844	Health - Diabetes
+g-p-6909a54e98cc81919c5186962dd7a409	Estates and Wills
+g-p-6909a5ad48588191a8b3a80e42baffc3	Music
+g-p-6909a5f5c6dc8191b82c6d8d6b040482	Dating
+g-p-6909a66a87e48191af205c5f88e330c5	Travel
+g-p-68a172b48378819185947684318eb7bd	Home
+g-p-686b8c911ef88191a60c9d0270b9f4b2	Sustainability
+g-p-6833f7555a648191810ea16edb3cc5d0	GIS - Esri
+g-p-67f8fc9e6c188191ad62089de0f9931d	Writing
