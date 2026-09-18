@@ -15,9 +15,16 @@ conversations.json    <stem>/     (one .md per conversation inside)
 .json (other)         skipped (not a recognized export shape)
 .md                   copied as-is
 .txt                  wrapped with frontmatter, saved as <stem>.md
-anything else         skipped (logged in the summary)
+anything else         <name.ext>.md sidecar recording the original
 
-Lock files (~$foo.docx) and dotfiles are skipped silently.
+Lock files (~$foo.docx) and dotfiles are skipped silently, as is anything
+inside a dot-folder (.obsidian/ and friends) at any depth.
+
+Nothing in the source is dropped without a record. A file that cannot be
+converted gets a small Markdown sidecar in the output naming the original and
+its path relative to the corpus root, so `2-Digested` stays a complete view of
+`1-Raw` without duplicating bulk. Media files and export auxiliaries continue
+to be copied through as before.
 
 Usage
 -----
@@ -282,6 +289,76 @@ def _copy_through(src: Path, dest_dir: Path, allocated: set,
     return f"{kind} (copied)"
 
 
+def _corpus_relative(src: Path, src_root: Path, corpus_root: Path | None) -> str:
+    """Path to `src` relative to the corpus root, with forward slashes.
+
+    The same string resolves on every mirror -- under I:\\RPG\\_Design\\Loom
+    locally and under drive:RPG/_Design/Loom on Drive -- because the reader
+    supplies the root, which it already knows. An absolute Windows path would
+    be meaningless the moment the corpus is pushed.
+    """
+    for base in (corpus_root, src_root):
+        if base is None:
+            continue
+        try:
+            return src.relative_to(base).as_posix()
+        except ValueError:
+            continue
+    return src.name
+
+
+def write_unconvertible_sidecar(src: Path, out_dir: Path, allocated: set,
+                                stats: Counter, src_root: Path,
+                                corpus_root: Path | None) -> str:
+    """Write a Markdown sidecar standing in for a file we cannot convert.
+
+    The sidecar records the original's name, type, size and corpus-relative
+    path. That makes the file findable from `2-Digested` without copying its
+    bytes: a reader who needs the original follows `source_path` into `1-Raw`.
+
+    Media files and export auxiliary files do NOT come here -- they are copied
+    through, which is the right treatment for content we can preserve cheaply.
+    """
+    source_path = _corpus_relative(src, src_root, corpus_root)
+    try:
+        size = src.stat().st_size
+        mtime = datetime.fromtimestamp(src.stat().st_mtime).astimezone()
+        date_str = mtime.isoformat(timespec="minutes")
+    except OSError:
+        size = 0
+        date_str = datetime.now().astimezone().isoformat(timespec="minutes")
+
+    ext = src.suffix.lower() or "(none)"
+    fm = {
+        "title":       src.name,
+        "date":        date_str,
+        "source":      "unconverted file (sidecar)",
+        "source_file": src.name,
+        "source_path": source_path,
+        "file_type":   ext,
+        "size_bytes":  size,
+    }
+    # Same source identity the converted files carry, so a renamed original is
+    # recognisable here too.
+    add_metadata.stamp_source_identity(fm, src)
+    body = (
+        f"# {src.name}\n\n"
+        f"This file could not be converted to Markdown. The original stays in "
+        f"the raw tree; this sidecar records its identity so it is findable "
+        f"from the digested tree.\n\n"
+        f"- **Original name:** {src.name}\n"
+        f"- **File type:** {ext}\n"
+        f"- **Size:** {size:,} bytes\n"
+        f"- **Path from corpus root:** `{source_path}`\n"
+    )
+    # Keep the extension in the sidecar name so notes.zip and notes.docx
+    # cannot collide, and so the original is obvious from the filename.
+    md_path = claim_output_path(out_dir / f"{src.name}.md", allocated)
+    write_md(md_path, fm, body, docx_to_markdown.to_yaml_frontmatter)
+    stats["sidecar"] += 1
+    return "sidecar (unconvertible)"
+
+
 def wrap_plaintext(src: Path) -> tuple[dict, str]:
     """Wrap a .txt file with minimal frontmatter for downstream metadata."""
     text = src.read_text(encoding="utf-8", errors="replace")
@@ -300,13 +377,23 @@ def wrap_plaintext(src: Path) -> tuple[dict, str]:
 def process_file(src: Path, src_root: Path, out_root: Path,
                  stats: Counter, dry_run: bool,
                  allocated: set, chatgpt_roots: set,
-                 claude_roots: set) -> str:
+                 claude_roots: set,
+                 corpus_root: Path | None = None) -> str:
     """Process one file. Return a one-word kind for logging."""
     if any(src.name.startswith(p) for p in SKIP_FILE_PREFIXES):
         stats["skipped_lock_or_hidden"] += 1
         return "skipped"
 
     rel_parent = src.parent.relative_to(src_root)
+
+    # Editor and tool configuration lives in dot-folders (.obsidian/ and the
+    # like). Skipping a file whose OWN name starts with a dot is not enough --
+    # .obsidian/app.json has an ordinary filename. Prune the whole subtree
+    # whenever any ancestor folder inside the source tree starts with a dot.
+    if any(part.startswith(".") for part in rel_parent.parts):
+        stats["skipped_dot_folder"] += 1
+        return "skipped (dot folder)"
+
     out_dir = out_root / rel_parent
     suffix = src.suffix.lower()
     stem = src.stem
@@ -342,8 +429,8 @@ def process_file(src: Path, src_root: Path, out_root: Path,
         if src.name.lower() in CHATGPT_AUX_FILENAMES:
             stats["chatgpt_aux"] += 1; return "chatgpt_aux"
         if inside_cgpt:                     stats["chatgpt_content"] += 1; return "chatgpt_content"
-        stats["unsupported"] += 1
-        return "skipped"
+        stats["sidecar"] += 1
+        return "sidecar"
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -352,12 +439,14 @@ def process_file(src: Path, src_root: Path, out_root: Path,
             md_path = claim_output_path(out_dir / f"{stem}.md", allocated)
             basename = md_path.stem  # tracks the .md filename if disambiguated
             fm, body = docx_to_markdown.convert_docx(src, out_dir, basename)
+            add_metadata.stamp_source_identity(fm, src)
             write_md(md_path, fm, body, docx_to_markdown.to_yaml_frontmatter)
             stats["docx"] += 1
             return "docx"
 
         if suffix == ".xlsx":
             fm, body = xlsx_to_markdown.convert_xlsx(src)
+            add_metadata.stamp_source_identity(fm, src)
             md_path = claim_output_path(out_dir / f"{stem}.md", allocated)
             write_md(md_path, fm, body, xlsx_to_markdown.to_yaml_frontmatter)
             stats["xlsx"] += 1
@@ -370,6 +459,7 @@ def process_file(src: Path, src_root: Path, out_root: Path,
             md_path = claim_output_path(out_dir / f"{stem}.md", allocated)
             basename = md_path.stem
             fm, body = pdf_to_markdown.convert_pdf(src, out_dir, basename)
+            add_metadata.stamp_source_identity(fm, src)
             write_md(md_path, fm, body, pdf_to_markdown.to_yaml_frontmatter)
             stats["pdf"] += 1
             return "pdf"
@@ -378,12 +468,14 @@ def process_file(src: Path, src_root: Path, out_root: Path,
             md_path = claim_output_path(out_dir / f"{stem}.md", allocated)
             basename = md_path.stem
             fm, body = html_to_markdown.convert_html(src, out_dir, basename)
+            add_metadata.stamp_source_identity(fm, src)
             write_md(md_path, fm, body, html_to_markdown.to_yaml_frontmatter)
             stats["html"] += 1
             return "html"
 
         if suffix == ".rtf":
             fm, body = rtf_to_markdown.convert_rtf(src)
+            add_metadata.stamp_source_identity(fm, src)
             md_path = claim_output_path(out_dir / f"{stem}.md", allocated)
             write_md(md_path, fm, body, rtf_to_markdown.to_yaml_frontmatter)
             stats["rtf"] += 1
@@ -397,8 +489,8 @@ def process_file(src: Path, src_root: Path, out_root: Path,
                     return _handle_chatgpt_aux(src, out_dir, allocated, stats)
                 if inside_cgpt:
                     return _copy_through(src, out_dir, allocated, stats, "chatgpt_content")
-                stats["unsupported"] += 1
-                return "skipped (unrecognized json)"
+                return write_unconvertible_sidecar(src, out_dir, allocated,
+                                                   stats, src_root, corpus_root)
 
             # Chunked exports (conversations-000.json, conversations-001.json,
             # ...) all merge into a single 'conversations' folder so projects
@@ -443,6 +535,7 @@ def process_file(src: Path, src_root: Path, out_root: Path,
 
         if suffix == ".txt":
             fm, body = wrap_plaintext(src)
+            add_metadata.stamp_source_identity(fm, src)
             md_path = claim_output_path(out_dir / f"{stem}.md", allocated)
             write_md(md_path, fm, body, docx_to_markdown.to_yaml_frontmatter)
             stats["txt"] += 1
@@ -461,8 +554,11 @@ def process_file(src: Path, src_root: Path, out_root: Path,
             # exports use for uploaded user content.
             return _copy_through(src, out_dir, allocated, stats, "chatgpt_content")
 
-        stats["unsupported"] += 1
-        return f"skipped ({suffix or 'no extension'})"
+        # Nothing is dropped. Anything left writes a sidecar recording what it
+        # was and where it lives, so the digested tree accounts for every file
+        # in the raw tree.
+        return write_unconvertible_sidecar(src, out_dir, allocated, stats,
+                                           src_root, corpus_root)
 
     except Exception as e:  # noqa: BLE001
         stats["errors"] += 1
@@ -489,6 +585,26 @@ def main() -> int:
     )
     ap.add_argument("input", help="Source directory")
     ap.add_argument("output", help="Destination directory (will mirror source structure)")
+    ap.add_argument("--corpus-root", default=None,
+                    help="Corpus root, the folder holding 1-Raw/2-Digested/"
+                         "3-Reporting/4-Canon. Sidecars record source paths "
+                         "relative to it so they resolve on every mirror. "
+                         "Default: the parent of INPUT.")
+    ap.add_argument("--dictionary", default=None,
+                    help="Word list used to veto keyword rejections. A system "
+                         "word list is used if one is found.")
+    ap.add_argument("--lexicon", action="append", default=None,
+                    help="Directory of word lists and glossaries (repeatable). "
+                         "Used to veto keyword rejections.")
+    ap.add_argument("--report-artifacts", default=None,
+                    help="Write every rejected keyword and the test that "
+                         "rejected it to this Markdown file.")
+    ap.add_argument("--no-dictionary", action="store_true",
+                    help="Do not look for a system word list.")
+    ap.add_argument("--subject", action="append", default=None,
+                    help="Speaker label naming the subject in speaker-labelled "
+                         "documents (repeatable). Used by provenance-weighted "
+                         "keyword extraction.")
     ap.add_argument("--no-metadata", action="store_true",
                     help="Skip the keyword-and-index metadata pass at the end")
     ap.add_argument("--keywords", type=int, default=None,
@@ -521,6 +637,22 @@ def main() -> int:
 
     src_root = Path(args.input).resolve()
     out_root = Path(args.output).resolve()
+    # The pipeline is pointed at a tier (1-Raw), not at the corpus root, so the
+    # root has to be supplied or inferred. The parent of the input tier is
+    # right for the standard layout and is overridable for anything else.
+    corpus_root = (Path(args.corpus_root).resolve()
+                   if args.corpus_root else src_root.parent)
+    subject_names = ({n.lower() for n in args.subject}
+                     if args.subject else None)
+    lexicon_dirs = list(args.lexicon or [])
+    if not lexicon_dirs and (SCRIPT_DIR / "lexicon").is_dir():
+        lexicon_dirs.append(SCRIPT_DIR / "lexicon")
+    dict_file = args.dictionary
+    if dict_file is None and not args.no_dictionary:
+        found = add_metadata.find_system_dictionary()
+        dict_file = str(found) if found else None
+    dictionary, lex_files = add_metadata.load_lexicons(lexicon_dirs, dict_file)
+    dictionary = dictionary or None
 
     if not src_root.is_dir():
         print(f"ERROR: input is not a directory: {src_root}", file=sys.stderr)
@@ -568,6 +700,7 @@ def main() -> int:
     claude_roots = find_claude_export_roots(src_root)
     print(f"Source : {src_root}")
     print(f"Output : {out_root}")
+    print(f"Corpus : {corpus_root}")
     print(f"Found  : {len(files)} files")
     if chatgpt_roots:
         print(f"ChatGPT exports detected: {len(chatgpt_roots)} folder(s)")
@@ -586,7 +719,8 @@ def main() -> int:
     for i, f in enumerate(files, 1):
         rel = f.relative_to(src_root)
         kind = process_file(f, src_root, out_root, stats, args.dry_run,
-                            allocated, chatgpt_roots, claude_roots)
+                            allocated, chatgpt_roots, claude_roots,
+                            corpus_root)
         print(f"[{i:>4}/{len(files)}] {kind:<26} {rel}")
 
     # ---- Claude export pass --------------------------------------------
@@ -669,8 +803,9 @@ def main() -> int:
     print(f"  media preserved    : {stats['media']}")
     print(f"  chatgpt aux files  : {stats['chatgpt_aux']}")
     print(f"  chatgpt content    : {stats['chatgpt_content']}")
-    print(f"  unsupported        : {stats['unsupported']}")
+    print(f"  sidecars written   : {stats['sidecar']}")
     print(f"  lock/hidden skipped: {stats['skipped_lock_or_hidden']}")
+    print(f"  dot-folder skipped : {stats['skipped_dot_folder']}")
     if stats['skipped_no_pypdf']:
         print(f"  pdf skipped (deps) : {stats['skipped_no_pypdf']}")
     print(f"  errors             : {stats['errors']}")
@@ -720,18 +855,39 @@ def main() -> int:
             print(f"  scanning {len(md_files)} files for TF-IDF corpus stats...")
             doc_freq, total_docs = add_metadata.build_corpus_doc_freq(md_files)
             print(f"  vocabulary: {len(doc_freq)} unique terms in {total_docs} files")
+        if dictionary:
+            print(f"  lexicon: {len(dictionary):,} terms from "
+                  f"{len(lex_files)} file(s)")
         changed = 0
+        meta_stats: Counter = Counter()
+        unknown_files: list[Path] = []
+        artifact_log: list = [] if args.report_artifacts else None
         for f in md_files:
             try:
+                before = meta_stats["structure_unknown"]
                 if add_metadata.process_file(f, n_keywords=args.keywords,
                                              write_index=True,
                                              doc_freq=doc_freq,
-                                             total_docs=total_docs):
+                                             total_docs=total_docs,
+                                             subject_names=subject_names,
+                                             stats=meta_stats,
+                                             dictionary=dictionary,
+                                             artifact_log=artifact_log):
                     changed += 1
+                if meta_stats["structure_unknown"] > before:
+                    unknown_files.append(f)
             except Exception as e:  # noqa: BLE001
                 print(f"  [warn] metadata for {f.relative_to(out_root)}: {e}",
                       file=sys.stderr)
         print(f"  metadata updated   : {changed} of {len(md_files)} files")
+        # Every `unknown` file is reported. They are candidates for an AI pass
+        # to recover turns, or for the owner to find the source conversation.
+        add_metadata.report_structure_stats(meta_stats, unknown_files, out_root)
+        if args.report_artifacts and artifact_log is not None:
+            add_metadata.write_artifact_report(args.report_artifacts,
+                                               artifact_log, out_root)
+            print(f"  rejected-keyword report: {args.report_artifacts}")
+        stats.update(meta_stats)
 
     # ---- NotebookLM sidecars --------------------------------------------
     # NotebookLM treats YAML frontmatter as literal text, which clutters its
