@@ -10,9 +10,17 @@ REM   clean_stale.py to identify or remove stale digested files.
 REM
 REM   Usage:
 REM     digest_all.bat                     digest + report stale (default)
-REM     digest_all.bat --delete-stale      digest + delete stale (confirms each library)
-REM     digest_all.bat --delete-orphans    digest + delete stale AND orphans (no prompt)
+REM     digest_all.bat --delete-stale      digest + enter delete mode
+REM     digest_all.bat --delete-orphans    digest + delete unidentifiable orphans
 REM     digest_all.bat --skip-stale        digest only, no stale check
+REM
+REM   NOTE: --delete-stale no longer deletes anything on its own. A digested
+REM   file whose source is missing from 1-Raw is NOT known to be stale: the
+REM   source may have been cleared on purpose to reclaim disk space after
+REM   digestion, in which case the digested copy is the only one left.
+REM   Removing those takes clean_stale.py --delete-source-absent, run directly
+REM   and deliberately. Mark files whose source was retired on purpose with
+REM   `source_retired: true` in their frontmatter and they stop being reported.
 REM
 REM   Edit the paths below to match your setup. Comment out
 REM   any library you don't want included by prefixing with REM.

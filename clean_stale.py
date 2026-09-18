@@ -5,28 +5,43 @@ clean_stale.py
 Detect (and optionally delete) stale Markdown files in a digested archive
 whose source material no longer exists in the corresponding raw tree.
 
-Two kinds of staleness are detected:
+Three conditions are detected:
 
-1. **Missing source file.** A digested .md with `source_file: foo.docx` in
+1. **Absent source file.** A digested .md with `source_file: foo.docx` in
    its frontmatter, where `foo.docx` no longer exists anywhere under the
-   raw tree. Most common cause: the source was deleted, moved out of the
-   tree, or renamed in raw without re-running the pipeline.
+   raw tree.
 
-2. **Missing export conversation.** A digested .md with `conversation_id:`
+2. **Absent export conversation.** A digested .md with `conversation_id:`
    in its frontmatter (from a Claude or ChatGPT export), where that UUID
-   does not appear in any `conversations.json` under the raw tree. Most
-   common cause: the conversation was deleted from the source platform
-   between exports.
+   does not appear in any `conversations.json` under the raw tree.
 
 3. **Unidentifiable orphans.** A digested .md with no `source_file` and
    no `conversation_id` -- nothing the script can use to verify the file
    belongs to anything in the raw tree. This is the 146-untitled-Claude-
    conversations case from earlier pipeline history: files written by an
    older converter version that can't be cross-checked against the
-   current export structure. These are flagged for review but the script
-   is conservative -- with `--delete` it deletes only verified-stale
-   (categories 1 and 2). Unidentifiable orphans require `--delete-orphans`
-   to remove.
+   current export structure.
+
+**An absent source is not evidence of stale output.** From the digested side,
+"the source was deleted upstream" and "the source was removed on purpose"
+look identical. Both produce a digested file whose source cannot be found,
+and only the corpus owner knows which happened. Bulky AI exports get cleared
+to reclaim disk space after digestion; deleting the digested output in that
+case destroys the only remaining copy.
+
+So conditions 1 and 2 are reported as `source-absent` and are NOT deleted by
+`--delete`. Removing them takes the dedicated `--delete-source-absent` flag,
+which says explicitly that the sources are known to be gone for good.
+
+To mark a file whose source was retired deliberately, set `source_retired:
+true` in its frontmatter. This script then treats it as verified and never
+counts it stale again -- the durable fix, since it survives re-runs and
+records the intent in the file itself.
+
+A bulk-delete guardrail refuses any run that would delete more than
+`--max-delete-fraction` of the analyzed files (default 10%) unless `--force`
+is given. A deletion that large is far more often a mis-pointed raw directory
+than a real cleanup.
 
 When deleting, paired `.nlm.md` sidecars are removed alongside their
 canonical `.md`.
@@ -48,14 +63,15 @@ Usage:
         # Report mode (default). Exits 1 if stale files found.
 
     python clean_stale.py <raw_dir> <digested_dir> --delete
-        # Delete verified-stale .md files (and paired .nlm.md sidecars).
+        # Deletes nothing on its own any more. Source-absent files need
+        # --delete-source-absent; orphans need --delete-orphans.
+
+    python clean_stale.py <raw_dir> <digested_dir> --delete-source-absent
+        # Delete files whose source is genuinely gone for good.
         # Prompts for confirmation unless --yes is given.
 
-    python clean_stale.py <raw_dir> <digested_dir> --delete --yes
-        # Delete without prompting (for scripted use).
-
     python clean_stale.py <raw_dir> <digested_dir> --delete-orphans
-        # Also delete unidentifiable orphans (use with caution).
+        # Delete unidentifiable orphans (use with caution).
 
     python clean_stale.py <raw_dir> <digested_dir> --verbose
         # Print every file's classification, not just stale ones.
@@ -82,6 +98,21 @@ SKIP_SOURCES = {
     "Claude export (account)",
     "ChatGPT export auxiliary file",
 }
+
+
+# Frontmatter values that count as true for `source_retired`. The minimal
+# parser below keeps unquoted scalars as strings, so `true` arrives as "true".
+TRUE_VALUES = {"true", "yes", "1", "on"}
+
+
+def is_source_retired(fm: dict) -> bool:
+    """True if the owner has marked this file's source as deliberately removed.
+
+    `source_retired: true` records the intent that an absent source is
+    expected. It survives re-runs and lives in the file itself, so the
+    knowledge does not depend on remembering which flag to pass.
+    """
+    return str(fm.get("source_retired", "")).strip().lower() in TRUE_VALUES
 
 
 def parse_frontmatter(text: str) -> dict:
@@ -165,12 +196,16 @@ def classify_file(md_path: Path,
     """Classify a single .md file. Returns (status, reason).
 
     status is one of:
-        "ok"          -- source verified present in raw
-        "skip"        -- non-conversation source, not analyzed
-        "stale-file"  -- source_file not in raw tree
-        "stale-conv"  -- conversation_id not in any raw conversations.json
-        "orphan"      -- no recognizable source identifiers in frontmatter
-        "no-fm"       -- file has no frontmatter at all
+        "ok"           -- source verified present in raw
+        "retired"      -- source deliberately removed; marked in frontmatter
+        "skip"         -- non-conversation source, not analyzed
+        "absent-file"  -- source_file not in raw tree
+        "absent-conv"  -- conversation_id not in any raw conversations.json
+        "orphan"       -- no recognizable source identifiers in frontmatter
+        "no-fm"        -- file has no frontmatter at all
+
+    An "absent-" status means the source cannot be found, NOT that the output
+    is stale. Only the owner can tell those apart.
     """
     try:
         with md_path.open(encoding="utf-8") as f:
@@ -181,6 +216,9 @@ def classify_file(md_path: Path,
     fm = parse_frontmatter(head)
     if not fm:
         return ("no-fm", "no frontmatter present")
+
+    if is_source_retired(fm):
+        return ("retired", "source_retired: source removed deliberately")
 
     source = fm.get("source", "")
     if source in SKIP_SOURCES:
@@ -193,13 +231,13 @@ def classify_file(md_path: Path,
     if source_file:
         if source_file.lower() in filenames:
             return ("ok", f"source_file present: {source_file}")
-        return ("stale-file", f"source_file not in raw: {source_file}")
+        return ("absent-file", f"source_file not in raw: {source_file}")
 
     # Export converters set conversation_id. Check the UUID index.
     if conv_id:
         if conv_id in conv_uuids:
             return ("ok", f"conversation_id present: {conv_id[:8]}…")
-        return ("stale-conv",
+        return ("absent-conv",
                 f"conversation_id not in any raw conversations.json: {conv_id[:8]}…")
 
     # Has frontmatter but no source identifier we can verify against.
@@ -248,15 +286,31 @@ def main() -> int:
     ap.add_argument("raw_dir", help="Path to the raw archive tree (1-Raw)")
     ap.add_argument("digested_dir", help="Path to the digested archive tree (2-Digested)")
     ap.add_argument("--delete", action="store_true",
-                    help="Delete verified-stale files (categories: stale-file, stale-conv). "
-                         "Prompts for confirmation unless --yes is given.")
+                    help="Enter delete mode. On its own this now deletes NOTHING: "
+                         "an absent source is not evidence that the output is "
+                         "stale, so those files need --delete-source-absent and "
+                         "orphans need --delete-orphans.")
+    ap.add_argument("--delete-source-absent", action="store_true",
+                    help="Delete files whose source_file or conversation_id "
+                         "cannot be found in the raw tree. Only use this when "
+                         "the sources are known to be gone for good -- if they "
+                         "were cleared to reclaim disk space, this destroys the "
+                         "only remaining copy. Implies --delete.")
     ap.add_argument("--delete-orphans", action="store_true",
-                    help="Also delete unidentifiable orphans (no source_file, no "
+                    help="Delete unidentifiable orphans (no source_file, no "
                          "conversation_id, or no frontmatter). Implies --delete. "
                          "Use with caution -- legitimate hand-edited files in the "
                          "digested tree may match this pattern.")
+    ap.add_argument("--max-delete-fraction", type=float, default=0.10,
+                    help="Refuse to delete more than this fraction of the "
+                         "analyzed files (default: 0.10). A deletion that large "
+                         "is usually a mis-pointed raw directory, not a cleanup. "
+                         "Override with --force.")
+    ap.add_argument("--force", action="store_true",
+                    help="Override the bulk-delete guardrail. Requires --yes too, "
+                         "so a large deletion can never be a single typo.")
     ap.add_argument("--yes", action="store_true",
-                    help="Skip the confirmation prompt when --delete is in effect")
+                    help="Skip the confirmation prompt when deleting")
     ap.add_argument("--verbose", action="store_true",
                     help="Print every file's classification, not just stale ones")
     args = ap.parse_args()
@@ -269,8 +323,8 @@ def main() -> int:
               file=sys.stderr)
         return 2
 
-    # --delete-orphans implies --delete (otherwise the flag does nothing)
-    delete_mode = args.delete or args.delete_orphans
+    # The specific delete flags imply --delete (otherwise they do nothing).
+    delete_mode = args.delete or args.delete_orphans or args.delete_source_absent
 
     print()
     print("=" * 60)
@@ -278,8 +332,13 @@ def main() -> int:
     print("=" * 60)
     print(f"  Raw     : {raw_dir}")
     print(f"  Digested: {digested_dir}")
+    selected = []
+    if args.delete_source_absent:
+        selected.append("source-absent")
+    if args.delete_orphans:
+        selected.append("orphans")
     print(f"  Mode    : {'DELETE' if delete_mode else 'REPORT'}"
-          f"{' (with orphans)' if args.delete_orphans else ''}")
+          f"{' (' + ', '.join(selected) + ')' if selected else ''}")
     print()
 
     # Build raw index once. This is the expensive step; everything else is
@@ -292,8 +351,8 @@ def main() -> int:
 
     # Classify everything first, then decide what to do.
     by_status: dict[str, list[tuple[Path, str]]] = {
-        "ok": [], "skip": [],
-        "stale-file": [], "stale-conv": [],
+        "ok": [], "retired": [], "skip": [],
+        "absent-file": [], "absent-conv": [],
         "orphan": [], "no-fm": [],
     }
     for md in md_files:
@@ -305,22 +364,25 @@ def main() -> int:
     # Summary counts
     print("  Classification summary:")
     print(f"    ok          : {len(by_status['ok']):>6,}  (source verified)")
+    print(f"    retired     : {len(by_status['retired']):>6,}  (source_retired: removed deliberately)")
     print(f"    skip        : {len(by_status['skip']):>6,}  (non-conversation, not analyzed)")
-    print(f"    stale-file  : {len(by_status['stale-file']):>6,}  (source_file missing from raw)")
-    print(f"    stale-conv  : {len(by_status['stale-conv']):>6,}  (conversation_id missing from raw)")
+    print(f"    absent-file : {len(by_status['absent-file']):>6,}  (source_file not found in raw)")
+    print(f"    absent-conv : {len(by_status['absent-conv']):>6,}  (conversation_id not found in raw)")
     print(f"    orphan      : {len(by_status['orphan']):>6,}  (no recognizable source)")
     print(f"    no-fm       : {len(by_status['no-fm']):>6,}  (no frontmatter)")
     print()
 
-    # Verified-stale = the two categories we can be sure about.
-    stale_verified = by_status["stale-file"] + by_status["stale-conv"]
+    # Source absent = the source cannot be found. NOT evidence of staleness:
+    # it reads the same whether the source was deleted upstream or cleared on
+    # purpose after digestion. Reported always, deleted only on demand.
+    source_absent = by_status["absent-file"] + by_status["absent-conv"]
     # Orphans = unverifiable; only deleted if --delete-orphans is set.
     orphans = by_status["orphan"] + by_status["no-fm"]
 
     # Print the actual paths so the user can decide what to do.
-    if stale_verified:
-        print("  Verified-stale files:")
-        for path, reason in stale_verified:
+    if source_absent:
+        print("  Source-absent files (output kept; the source could not be found):")
+        for path, reason in source_absent:
             print(f"    {path.relative_to(digested_dir)}")
             print(f"      ({reason})")
         print()
@@ -332,24 +394,51 @@ def main() -> int:
             print(f"      ({reason})")
         print()
 
-    if not stale_verified and not orphans:
-        print("  No stale or orphan files found. Nothing to clean.")
+    if source_absent:
+        print("  A source-absent file is NOT known to be stale. If these sources")
+        print("  were cleared on purpose, mark the files with `source_retired: true`")
+        print("  in their frontmatter and they will stop being reported.")
+        print()
+
+    if not source_absent and not orphans:
+        print("  No source-absent or orphan files found. Nothing to clean.")
         return 0
 
     # Report mode: stop here, exit 1 to signal there's something to look at.
     if not delete_mode:
-        print("  (Report mode. Re-run with --delete to remove verified-stale files,")
-        print("   or --delete-orphans to also remove unidentifiable orphans.)")
+        print("  (Report mode. Deleting takes --delete-source-absent or")
+        print("   --delete-orphans; --delete alone no longer removes anything.)")
         return 1
 
     # Figure out what's actually going to be deleted.
-    to_delete = list(stale_verified)
+    to_delete: list[tuple[Path, str]] = []
+    if args.delete_source_absent:
+        to_delete += source_absent
     if args.delete_orphans:
         to_delete += orphans
 
     if not to_delete:
-        print("  Nothing to delete (no verified-stale files found; orphans require --delete-orphans).")
+        print("  Nothing selected for deletion. Source-absent files need")
+        print("  --delete-source-absent; orphans need --delete-orphans.")
         return 0
+
+    # Bulk-delete guardrail. Deleting a large share of the tree is far more
+    # often a mis-pointed raw directory than a real cleanup, so it has to be
+    # asked for twice.
+    analyzed = max(len(md_files), 1)
+    fraction = len(to_delete) / analyzed
+    if fraction > args.max_delete_fraction and not args.force:
+        print(f"  REFUSING: this would delete {len(to_delete):,} of "
+              f"{analyzed:,} files ({fraction:.1%}), above the "
+              f"{args.max_delete_fraction:.1%} limit.")
+        print("  Check that the raw directory is the right one and actually")
+        print("  populated. If the deletion is genuinely intended, re-run with")
+        print("  --force --yes, or raise --max-delete-fraction.")
+        return 1
+    if args.force and not args.yes:
+        print("  REFUSING: --force also requires --yes, so a deletion this "
+              "large cannot be a single typo.")
+        return 1
 
     # Confirm unless --yes was given.
     if not args.yes:
