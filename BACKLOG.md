@@ -48,11 +48,29 @@ extraction had been counting *embedded* and *unresolved* 433 times in that file.
 Neither is a stopword. The same held for every pasted conversation, which is
 most of the high-count list.
 
-**Still open: Matt's drafts are a different origin.** `3.4 Skills - Description`
-(99) and the Dragons file (83) are authored docx, not pasted conversations, and
-may have genuinely embedded images. Probe `word/media` on one of them. If it is
-populated, the straightforward extraction case is real for his files even though
-it was not for the pasted ones.
+**Closed across the whole corpus.** Every affected document was swept, matching
+each digested file's marker count against its source's `word/media` entries,
+its `document.xml.rels` image relationships, and its recorded
+`images_extracted`.
+
+Of roughly 185 affected documents, only 20 carry any media at all, 50 files
+between them. In every one, `images_extracted` equals the number of image
+relationships in the document body: **the converter has never failed to extract
+an image the body references.** There is no extraction bug, and the highest
+marker counts (433, 197, 115, 99, 83) sit on documents with no media
+whatsoever.
+
+Eight image files across six documents exist in the package without being
+referenced from `document.xml`. Spot-checking the largest
+(`Core Mechanic and Probability System.docx`, 9 in the package, 8 referenced):
+the eight referenced are ~180 KB matplotlib charts, extracted and linked
+correctly, and the ninth is a **70-byte PNG** -- a 1x1 pixel, the kind of
+spacer that arrives with pasted HTML. The file also carries `header1`/`header2`
+relationship parts, so header decoration is the other candidate for that class.
+
+No frontmatter counter was added for them. A field reporting eight
+pixel-spacers and header graphics as unreferenced would imply a loss that did
+not occur, which is worse than silence.
 
 ### AI export media pointers — Decision 7
 **Owner: Nick to run the inspection, Assistant to build.**
