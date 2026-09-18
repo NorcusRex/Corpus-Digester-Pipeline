@@ -12,23 +12,47 @@ real corpus.
 ## Waiting on the corpus
 
 ### docx unresolved drawings — Decision 7
-**Owner: Nick to verify, then Assistant to scope.**
+**Resolved. No media was being lost; the figure was our own false positive.**
 
-One 43,639-word file reports `unresolved_drawings: 433` with
-`images_extracted: 0`. The converter already counts and reports the loss, which
-is what the decision requires either way. What is unknown is whether those 433
-are extractable.
+The premise was that a 43,639-word docx reporting `unresolved_drawings: 433`
+with `images_extracted: 0` had lost 433 images. Verified against the real file
+(`Danger vs Agency.docx`) and it had not. The document contains no images at
+all:
 
-A `.docx` is a zip; embedded images sit in `word/media/`. Unzip one affected
-file and list that folder:
+| Probe | Count |
+|---|---|
+| `word/media/` | folder absent |
+| `<w:drawing>` | 0 |
+| `r:embed=` / `r:link=` | 0 / 0 |
+| `<v:shape>` / `<v:imagedata>` | 0 / 0 |
+| `<w:object>` / `<mc:AlternateContent>` | 0 / 0 |
+| image relationships, `TargetMode="External"` | 0 / 0 |
+| **`<w:pict>`** | **433** |
+| **`<v:rect>`** | **433** |
 
-- **Files present** — the converter is not resolving relationship IDs to files.
-  Extraction is straightforward and belongs in Decision 7.
-- **Folder empty or short** — the content is VML shapes, OLE objects, or
-  drawing-canvas elements. Those have no file to extract and would need
-  rendering: a different and much larger job, and a separate decision.
+Pasting a web page into Word turns every HTML `<hr>` into
+`<w:pict><v:rect o:hr="t">`. The file is a pasted ChatGPT conversation, so the
+433 were turn separators. `render_pict` called every picture element without
+image data a failed image, and the counter was a substring search for
+`(unresolved)` over the finished Markdown.
 
-Scope only after this check.
+Both fixed. `render_pict` now distinguishes three cases — a resolvable image, an
+image that will not resolve, and a picture element that is not an image at all
+(a horizontal rule renders as `---`, other bare shapes render as nothing).
+The field is renamed `unresolved_images`, counts actual emissions, and is
+joined by `horizontal_rules`. Re-digestion replaces `unresolved_drawings` in
+existing output.
+
+Side effect worth knowing: those 433 dead markers were in the body, so keyword
+extraction had been counting *embedded* and *unresolved* 433 times in that file.
+Neither is a stopword. The same held for every pasted conversation, which is
+most of the high-count list.
+
+**Still open: Matt's drafts are a different origin.** `3.4 Skills - Description`
+(99) and the Dragons file (83) are authored docx, not pasted conversations, and
+may have genuinely embedded images. Probe `word/media` on one of them. If it is
+populated, the straightforward extraction case is real for his files even though
+it was not for the pasted ones.
 
 ### AI export media pointers — Decision 7
 **Owner: Nick to run the inspection, Assistant to build.**
