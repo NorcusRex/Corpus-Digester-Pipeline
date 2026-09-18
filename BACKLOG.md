@@ -168,13 +168,22 @@ verified against a manifest carrying every documented field plus invented ones.
 The manifest is recorded as a named pipeline input in `readme.txt` alongside
 `project_names.tsv`.
 
-One inconsistency to raise with whoever maintains that reference file: it is
-headed **Version 2.3**, and its *Versioning* section says the document version
-and `manifest_format_version` "move together", giving `this document at v1.0
-describes "manifest_format_version": "1.0"`. Its own example then shows
-`"manifest_format_version": "1.0"` under a 2.3 header. By its stated rule the
-example should read `"2.3"`. Harmless today, since the pipeline ignores the
-field, but it will confuse the first person who tries to validate against it.
+One thing to raise with whoever maintains those reference files. The skill
+bundle's `project-manifest-format.md` is headed **Version 2.3** but its example
+manifest carries `"manifest_format_version": "1.0"`, while its *Versioning*
+section says the two numbers move together.
+
+The likely explanation is that the header number is a BUNDLE version, stamped
+across every reference file at once, rather than a version of that document.
+The evidence: the `glossary.md` shipping in the same bundle is word-for-word
+identical to the glossary v1.6 we were given, differing only in its header,
+which reads 2.3. Same text, different number.
+
+If that is right, the manifest format really is at 1.0, the example is correct,
+and the sentence claiming the document version and `manifest_format_version`
+move together is the error. Nothing for this pipeline either way -- it ignores
+the field -- but anyone writing a validator would not know which number to
+expect.
 
 ---
 
