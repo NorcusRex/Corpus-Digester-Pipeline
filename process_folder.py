@@ -590,6 +590,11 @@ def main() -> int:
                          "3-Reporting/4-Canon. Sidecars record source paths "
                          "relative to it so they resolve on every mirror. "
                          "Default: the parent of INPUT.")
+    ap.add_argument("--dictionary", default=None,
+                    help="Word list used to veto keyword rejections. A system "
+                         "word list is used if one is found.")
+    ap.add_argument("--no-dictionary", action="store_true",
+                    help="Do not look for a system word list.")
     ap.add_argument("--subject", action="append", default=None,
                     help="Speaker label naming the subject in speaker-labelled "
                          "documents (repeatable). Used by provenance-weighted "
@@ -633,6 +638,12 @@ def main() -> int:
                    if args.corpus_root else src_root.parent)
     subject_names = ({n.lower() for n in args.subject}
                      if args.subject else None)
+    dictionary = None
+    if not args.no_dictionary:
+        dict_path = (Path(args.dictionary) if args.dictionary
+                     else add_metadata.find_system_dictionary())
+        if dict_path is not None:
+            dictionary = add_metadata.load_dictionary(dict_path)
 
     if not src_root.is_dir():
         print(f"ERROR: input is not a directory: {src_root}", file=sys.stderr)
@@ -846,7 +857,8 @@ def main() -> int:
                                              doc_freq=doc_freq,
                                              total_docs=total_docs,
                                              subject_names=subject_names,
-                                             stats=meta_stats):
+                                             stats=meta_stats,
+                                             dictionary=dictionary):
                     changed += 1
                 if meta_stats["structure_unknown"] > before:
                     unknown_files.append(f)

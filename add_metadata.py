@@ -34,7 +34,7 @@ import argparse
 import hashlib
 import re
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -565,6 +565,270 @@ def build_corpus_doc_freq(md_files: list) -> tuple[dict, int]:
 # Frontmatter parse / emit
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Extraction artifacts  (digester handoff v6.8, Decision 8)
+# ---------------------------------------------------------------------------
+#
+# Keyword lists carry strings such as `erlyjewxq`, `jauuimuv-wmcjrfg`, `kxwoj`
+# and `lz-pirirgptx`. They are conversion debris, not words, and the existing
+# filters miss them: a token need only start with a letter and reach four
+# characters.
+#
+# Rejection is deliberately conservative. A missed artifact is a minor cost; a
+# wrongly rejected real term is worse, because it removes a word the corpus is
+# actually about. So the tests are arranged in two tiers:
+#
+#   HARD    -- shapes no English word takes. Always applied.
+#   SOFT    -- statistical suspicion, which real words do sometimes trigger.
+#              "strengths" has a one-in-nine vowel ratio. These only reject
+#              when a dictionary is available to veto, or when the term appears
+#              in a single document and never capitalised.
+#
+# The dictionary's job is mostly to PREVENT rejections, not to cause them.
+
+VOWELS = set("aeiouy")
+
+# For "has no vowel at all", `w` counts. Welsh writes it as one -- crwth, cwm --
+# and this corpus is full of Celtic vocabulary.
+VOWELS_LOOSE = set("aeiouyw")
+
+# Letter pairs that effectively do not occur inside English words. This is the
+# test that actually separates debris from vocabulary: `kxwoj` and `clock` have
+# the same vowel ratio, so counting vowels cannot tell them apart, but `kx`
+# never occurs and `cl` is everywhere.
+#
+# Deliberately short and certain. Pairs that look odd but are real are absent:
+# `nx` (sphinx, lynx), `tz` (waltz, blitz), `hw` (schwa), `gt` (strengths),
+# `hs` (twelfths), `mn` (autumn), `pt` (crypts).
+IMPOSSIBLE_BIGRAMS = frozenset("""
+bq bx bz cj cv cx cz dx fq fv fx fz gq gv gx gz hx hz
+jb jc jd jf jg jh jk jl jm jn jq jr js jt jv jw jx jz
+kq kx kz lq lx lz mx mz pq pv px pz
+qb qc qd qf qg qh qj qk ql qm qn qp qq qr qs qt qv qw qx qy qz
+sx tq tx vb vc vd vf vg vh vj vk vl vm vn vp vq vr vs vt vw vx vz
+wq wv wx wz xj xk xq xr xz yq zj zq zr zx
+""".split())
+
+# A term seen in at least this many documents is real, whatever it looks like.
+# Debris is random, so it does not recur across independently converted files.
+ARTIFACT_DF_FLOOR = 3
+
+CONSONANT_RUN_HARD = 7   # no English word reaches this
+CONSONANT_RUN_SOFT = 6   # "strengths" and "twelfths" reach 5, so 5 is unsafe
+
+
+def _longest_consonant_run(term: str) -> int:
+    longest = run = 0
+    for ch in term:
+        if ch.isalpha() and ch not in VOWELS:
+            run += 1
+            longest = max(longest, run)
+        else:
+            run = 0
+    return longest
+
+
+def is_hard_artifact(term: str) -> bool:
+    """Shapes no English word takes. Safe to reject with no other evidence."""
+    letters = [c for c in term if c.isalpha()]
+    if not letters:
+        return True
+    # Letters and digits mashed together.
+    if any(c.isdigit() for c in term) and any(c.isalpha() for c in term):
+        return True
+    # No vowel anywhere, counting `w` as one so Welsh vocabulary survives.
+    if len(letters) >= 4 and not any(c in VOWELS_LOOSE for c in letters):
+        return True
+    # `q` without a following `u`.
+    for i, c in enumerate(term):
+        if c == "q" and (i + 1 >= len(term) or term[i + 1] != "u"):
+            return True
+    # The same letter three times running.
+    for i in range(len(term) - 2):
+        if term[i] == term[i + 1] == term[i + 2] and term[i].isalpha():
+            return True
+    return _longest_consonant_run(term) >= CONSONANT_RUN_HARD
+
+
+def is_soft_artifact(term: str) -> bool:
+    """Implausible letter sequences, vetoable by other evidence.
+
+    Kept soft rather than hard because a loanword or an unusual name could in
+    principle contain one of these pairs, and losing a real term costs more
+    than keeping an artifact.
+    """
+    letters = "".join(c for c in term if c.isalpha())
+    if len(letters) < 4:
+        return False
+    for i in range(len(letters) - 1):
+        if letters[i:i + 2] in IMPOSSIBLE_BIGRAMS:
+            return True
+    return _longest_consonant_run(term) >= CONSONANT_RUN_SOFT
+
+
+def load_dictionary(path) -> set[str]:
+    """Load a plain word list: one word per line. Empty set if unreadable."""
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return set()
+    return {line.strip().lower() for line in text.splitlines() if line.strip()}
+
+
+def find_system_dictionary() -> Path | None:
+    """A word list in one of the usual places, if there is one."""
+    for candidate in ("/usr/share/dict/words", "/usr/dict/words",
+                      "/usr/share/dict/american-english"):
+        path = Path(candidate)
+        if path.is_file():
+            return path
+    local = SCRIPT_DIR / "words.txt" if "SCRIPT_DIR" in globals() else None
+    if local is not None and local.is_file():
+        return local
+    return None
+
+
+def capitalized_terms(body: str) -> set[str]:
+    """Lowercased forms of every word that appears capitalised in the body.
+
+    A capitalised term is probably a name -- Loom, Cernunnos, Brigit -- and the
+    corpus is full of them. They will not be in any dictionary, so they must
+    never be rejected for that reason alone.
+    """
+    out: set[str] = set()
+    for match in WORD_RE.findall(body):
+        if match[:1].isupper():
+            out.add(match.lower())
+    return out
+
+
+def reject_artifacts(terms, body: str = "", dictionary: set[str] | None = None,
+                     doc_freq: dict | None = None) -> tuple[list[str], list[str]]:
+    """Split candidate keywords into (kept, rejected)."""
+    names = capitalized_terms(body) if body else set()
+    kept: list[str] = []
+    rejected: list[str] = []
+    for term in terms:
+        base = term.lower()
+        if is_hard_artifact(base):
+            rejected.append(term)
+            continue
+        if not is_soft_artifact(base):
+            kept.append(term)
+            continue
+        # Soft suspicion. Any of these vetoes the rejection.
+        if dictionary and base in dictionary:
+            kept.append(term)
+            continue
+        if base.replace("-", "") in (dictionary or set()):
+            kept.append(term)
+            continue
+        if base in names:
+            kept.append(term)
+            continue
+        if doc_freq and doc_freq.get(base, 0) >= ARTIFACT_DF_FLOOR:
+            kept.append(term)
+            continue
+        rejected.append(term)
+    return kept, rejected
+
+
+# ---------------------------------------------------------------------------
+# Document date
+# ---------------------------------------------------------------------------
+#
+# `date` carries the DOCUMENT's own local timestamp with offset, matching its
+# filename: 2026-09-15T17:47-07:00. It is not `modified` (when the file was
+# last touched on disk) and not `indexed_at` (when we last ran). Three sources
+# are tried in order, best first, and the one used is recorded in `date_source`
+# so a reader can tell a real document date from a filesystem fallback.
+
+# Fields a converter may already have filled from the source itself.
+DATE_SOURCE_FIELDS = ("created", "create_time", "created_at", "date")
+
+# The corpus filename convention: YYYY-MM-DD-HHMM__slug. The timestamp is
+# local time in the corpus owner's zone, so it is read as naive local.
+FILENAME_TS_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})-(\d{2})(\d{2})__")
+
+# PDF dates look like D:20260917095500-07'00', with an optional trailing
+# offset that must be honoured rather than dropped -- a PDF written in another
+# zone would otherwise land hours out.
+PDF_DATE_RE = re.compile(
+    r"^D:(\d{4})(\d{2})(\d{2})(\d{2})?(\d{2})?(\d{2})?"
+    r"(?:(Z)|([+-])(\d{2})'?(\d{2})?)?")
+
+
+def _as_local_iso(dt: datetime) -> str:
+    """Format a datetime as local time with offset, to the minute."""
+    if dt.tzinfo is None:
+        dt = dt.astimezone()          # naive is local by definition
+    else:
+        dt = dt.astimezone()          # convert to the local zone
+    return dt.isoformat(timespec="minutes")
+
+
+def parse_any_date(value) -> datetime | None:
+    """Parse the date formats the converters actually produce. None if unusable."""
+    if isinstance(value, datetime):
+        return value
+    text = str(value or "").strip()
+    if not text:
+        return None
+    m = PDF_DATE_RE.match(text)
+    if m:
+        y, mo, d, hh, mi, ss, zulu, sign, off_h, off_m = m.groups()
+        tz = None
+        if zulu:
+            tz = timezone.utc
+        elif sign:
+            delta = timedelta(hours=int(off_h), minutes=int(off_m or 0))
+            tz = timezone(-delta if sign == "-" else delta)
+        try:
+            return datetime(int(y), int(mo), int(d),
+                            int(hh or 0), int(mi or 0), int(ss or 0), tzinfo=tz)
+        except ValueError:
+            return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        pass
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d", "%Y/%m/%d"):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def resolve_date(fm: dict, path: Path) -> tuple[str, str]:
+    """Return (iso_date, which_source). Empty date only if the file is unreadable.
+
+    1. A date the converter already knows, from the source document itself.
+    2. The timestamp in the filename, where the name follows the convention.
+    3. The file's modification time.
+    """
+    for field in DATE_SOURCE_FIELDS:
+        if field not in fm:
+            continue
+        dt = parse_any_date(fm.get(field))
+        if dt is not None:
+            return _as_local_iso(dt), f"document ({field})"
+
+    m = FILENAME_TS_RE.match(path.name)
+    if m:
+        y, mo, d, hh, mi = (int(g) for g in m.groups())
+        try:
+            return _as_local_iso(datetime(y, mo, d, hh, mi)), "filename"
+        except ValueError:
+            pass
+
+    try:
+        mtime = datetime.fromtimestamp(path.stat().st_mtime)
+    except OSError:
+        return "", "unavailable"
+    return _as_local_iso(mtime), "file mtime"
+
+
 # Identity of a converted file's source, recorded at digestion time.
 #
 # Matching a digested file to its source by FILENAME breaks the moment the
@@ -717,7 +981,8 @@ def process_file(path: Path, n_keywords: int | None, write_index: bool,
                  doc_freq: dict | None = None,
                  total_docs: int = 0,
                  subject_names: set[str] | None = None,
-                 stats: Counter | None = None) -> bool:
+                 stats: Counter | None = None,
+                 dictionary: set[str] | None = None) -> bool:
     """Update the file in place. Return True if anything changed.
 
     When `doc_freq` and `total_docs` are provided (the corpus-aware mode used
@@ -749,11 +1014,21 @@ def process_file(path: Path, n_keywords: int | None, write_index: bool,
 
     if str(existing.get("source", "")) == SIDECAR_SOURCE:
         kw = sidecar_keywords(existing, n=actual_n)
-    elif doc_freq is not None and total_docs > 0:
-        kw = top_keywords_tfidf(body, doc_freq, total_docs, n=actual_n,
-                                tf_counts=tf_counts)
     else:
-        kw = top_keywords(body, n=actual_n, tf_counts=tf_counts)
+        # Over-fetch, then drop conversion debris, so rejecting an artifact
+        # does not leave the list short.
+        headroom = actual_n + 10
+        if doc_freq is not None and total_docs > 0:
+            candidates = top_keywords_tfidf(body, doc_freq, total_docs,
+                                            n=headroom, tf_counts=tf_counts)
+        else:
+            candidates = top_keywords(body, n=headroom, tf_counts=tf_counts)
+        kw, dropped = reject_artifacts(candidates, body=body,
+                                       dictionary=dictionary,
+                                       doc_freq=doc_freq)
+        kw = kw[:actual_n]
+        if stats is not None and dropped:
+            stats["artifacts_rejected"] += len(dropped)
 
     if stats is not None:
         stats[f"structure_{structure}"] += 1
@@ -774,6 +1049,13 @@ def process_file(path: Path, n_keywords: int | None, write_index: bool,
     if "title" not in existing:
         m = re.search(r"^#\s+(.+?)\s*$", body, re.MULTILINE)
         existing["title"] = m.group(1) if m else path.stem.replace("_", " ").replace("-", " ")
+    # `date` is one of the four fields search relies on. Backfill it from the
+    # best source available, and say which one was used.
+    if not str(existing.get("date", "") or "").strip():
+        date_value, date_source = resolve_date(existing, path)
+        if date_value:
+            existing["date"] = date_value
+            existing["date_source"] = date_source
 
     # Always-overwrite computed fields.
     existing["word_count"] = wc
@@ -825,6 +1107,8 @@ def report_structure_stats(stats: Counter, unknown_files: list,
         print(f"  {label:<17}: {stats[f'structure_{label}']:>6,}")
     print(f"  keywords weighted: {stats['keywords_weighted']:>6,}")
     print(f"  keywords plain   : {stats['keywords_unweighted']:>6,}")
+    if stats["artifacts_rejected"]:
+        print(f"  artifacts dropped: {stats['artifacts_rejected']:>6,}")
     if stats["weighting_blocked"]:
         print(f"  [info] {stats['weighting_blocked']} conversational file(s) "
               f"could not be weighted; pass --subject to name the subject.")
@@ -857,6 +1141,13 @@ def main() -> int:
                          "very long).")
     ap.add_argument("--no-index", action="store_true",
                     help="Skip the in-body auto-index block; only update frontmatter")
+    ap.add_argument("--dictionary", default=None,
+                    help="Word list (one word per line) used to VETO keyword "
+                         "rejections. Without one, a statistically odd term is "
+                         "kept when it recurs across documents or appears "
+                         "capitalised. A system word list is used if found.")
+    ap.add_argument("--no-dictionary", action="store_true",
+                    help="Do not look for a system word list.")
     ap.add_argument("--subject", action="append", default=None,
                     help="Speaker label naming the subject in speaker-labelled "
                          "documents (repeatable). Without it, a document with "
@@ -866,6 +1157,16 @@ def main() -> int:
 
     subject_names = ({s.lower() for s in args.subject}
                      if args.subject else None)
+
+    dictionary: set[str] | None = None
+    if not args.no_dictionary:
+        dict_path = Path(args.dictionary) if args.dictionary else find_system_dictionary()
+        if dict_path is not None:
+            dictionary = load_dictionary(dict_path)
+            print(f"Dictionary: {dict_path} ({len(dictionary):,} words)"
+                  if dictionary else f"Dictionary: {dict_path} (unreadable)")
+        elif args.dictionary:
+            print(f"Dictionary: {args.dictionary} not found")
 
     root = Path(args.path)
     if root.is_file():
@@ -896,7 +1197,8 @@ def main() -> int:
         if process_file(f, n_keywords=args.keywords,
                         write_index=not args.no_index,
                         doc_freq=doc_freq, total_docs=total_docs,
-                        subject_names=subject_names, stats=stats):
+                        subject_names=subject_names, stats=stats,
+                        dictionary=dictionary):
             changed += 1
         if stats["structure_unknown"] > before:
             unknown_files.append(f)

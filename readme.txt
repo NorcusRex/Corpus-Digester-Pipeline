@@ -2,6 +2,27 @@
 ARCHIVE DIGESTION PIPELINE - README
 ================================================================
 
+
+NOTE ON SCRIPT NAMES
+--------------------
+The Loom-specific batch files were replaced by generic ones that take the
+corpus root and remote as parameters:
+
+    sync_loom.bat            ->  sync_gdrive_corpus.bat
+    push_loom.bat            ->  push_gdrive_corpus.bat
+    merge_loom_to_drive.bat  ->  merge_corpus_local_to_drive.bat
+    pull_matt.bat            ->  pull_gdrive_folder.bat
+    digest_all.bat           ->  corpus_wrapper.template.bat
+
+No corpus name, local path, or Drive path appears in any of them. Each corpus
+gets one copy of corpus_wrapper.template.bat in its _Tools folder, with its
+paths filled in; that wrapper calls the generic scripts in order. Configuration
+files such as the AI selection list and project_names.tsv are data, not code,
+and live beside the wrapper.
+
+Sections below that still name the old scripts describe the same behaviour
+under the new names.
+
 A set of Python scripts that convert mixed file formats (.docx, .xlsx,
 .pdf, .html, .rtf, ChatGPT JSON exports, Claude data exports, .md, .txt)
 into a parallel folder tree of Markdown files with searchable metadata.
