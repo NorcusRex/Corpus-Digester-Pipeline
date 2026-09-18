@@ -52,9 +52,9 @@ The Claude side is better placed — `render_files` already reads `file_name` an
 ## Agreed, not yet built
 
 ### Pipeline self-check — Decision 5
-**Owner: Assistant.**
+**Built** as `pipeline_selfcheck.py`. Kept here for the record of what it covers.
 
-A new script running all six checks: unconverted files, index integrity,
+All six checks: unconverted files, index integrity,
 frontmatter presence, filename conformance, duplicate content by normalized
 token windows, and suggest-never-delete. `4-Canon` is exempt from the
 frontmatter check.
@@ -141,18 +141,39 @@ a small set of passages. Neither is needed for the ranking to work.
 
 ## Findings not yet decisions
 
+### The pipeline does not write `date`
+**Owner: Nick to rule on the source of truth, Assistant to build.**
+
+Found by `pipeline_selfcheck.py` on its first run against clean output: every
+Markdown file the pipeline writes is missing `date`, one of the four fields
+`repository-structure.md` says the pipeline writes and search relies on.
+
+`add_metadata` backfills `modified` (the file's mtime, in UTC) and stamps
+`indexed_at`, but never `date`. The two are not interchangeable: `modified` is
+when the file was last touched on disk, and `date` is meant to carry the
+document's own local timestamp with offset, matching its filename.
+
+The fix is a small backfill; the ruling is what it should draw from, in order
+of preference:
+
+1. a date the converter already knows -- a conversation's `create_time`, a
+   docx's document properties
+2. the timestamp in the filename, where the file follows the convention
+3. the file's mtime, converted to the corpus owner's local zone
+
+Sidecars already write `date` correctly, which is why they do not appear in
+the finding.
+
 ### HTML relative image sources
-**Owner: Assistant, pending a ruling on whether it matters.**
+**Closed.**
 
-`html_to_markdown.make_image_handler` extracts base64 `data:` URLs into
-`<basename>_media/` and links them correctly. A relative `src="images/foo.png"`
-— as produced by a browser-saved page with its `_files/` folder — is passed
-through unchanged, so the link resolves against the output location rather than
-the original. Narrow, and only affects saved pages whose asset folder is not
-carried alongside.
+`html_to_markdown.make_image_handler` now copies a relative `src=` into
+`<basename>_media/` and rewrites the link, alongside the base64 `data:` URLs it
+already handled. URL-escaped names resolve, a repeated asset copies once, and a
+path escaping the HTML file's own folder is refused rather than followed.
 
-PDF extraction is verified correct: embedded images per page plus attachments,
-both written to `<basename>_media/` and linked.
+PDF extraction was verified correct and needed no change: embedded images per
+page plus attachments, both written to `<basename>_media/` and linked.
 
 ### Reference documents contradict the sidecar ruling
 **Owner: Nick, in the source conversation.**

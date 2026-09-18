@@ -39,9 +39,12 @@ if /i "%~1"=="--delete-stale" (
     set "STALE_MODE=delete"
     set "STALE_ARGS=--delete"
 )
+REM Deleting orphans always confirms. An orphan is a file the script cannot
+REM verify either way, so removing a batch of them is never routine enough to
+REM wave through unattended.
 if /i "%~1"=="--delete-orphans" (
     set "STALE_MODE=delete-orphans"
-    set "STALE_ARGS=--delete-orphans --yes"
+    set "STALE_ARGS=--delete-orphans"
 )
 
 REM ---------- Locate Python ----------
