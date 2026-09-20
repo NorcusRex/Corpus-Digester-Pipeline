@@ -94,9 +94,16 @@ them and no generated index block is inserted into their prose.
 ## Keywords
 
 Keywords are ranked by TF-IDF across the corpus. For documents that can be
-classified as conversations, each term's count is first weighted by the
-acceptance tier of the assertion carrying it, so what a document is *about*
-reflects what the corpus owner engaged with rather than raw word frequency.
+classified as conversations, each term's count is first weighted by **whose
+turns it appears in**: a term the corpus owner used anywhere in their own turns
+carries far more weight than one only the assistant ever used. So what a
+document is *about* reflects what the owner engaged with rather than raw word
+frequency.
+
+Quoting counts as engagement. Choosing to reproduce a passage is an act of
+engagement with its terminology, whoever first wrote it, so quoted text weighs
+the same as any other text in the owner's turns. That also means the weighting
+does not depend on blockquote markers, which nobody adds consistently.
 
 Conversion debris is filtered out. Before trusting that filter on a new corpus,
 run a digest with `--report-artifacts rejected.md` and read what it dropped —

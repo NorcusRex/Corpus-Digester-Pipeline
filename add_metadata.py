@@ -236,8 +236,6 @@ SPEAKER_LABEL_RE = re.compile(
     r"^[ \t]{0,3}\*\*([A-Z][A-Za-z0-9 .'\u2019-]{0,39}):\*\*", re.MULTILINE
 )
 
-BLOCKQUOTE_RE = re.compile(r"^[ \t]{0,3}>")
-
 # Heading roles that speak for the subject, and roles that do not.
 SUBJECT_ROLES = {"Human", "User"}
 ASSISTANT_ROLES = {"Assistant", "System", "Tool"}
@@ -314,44 +312,64 @@ def classify_provenance_structure(body: str, fm: dict) -> tuple[str, list[str]]:
 
 
 # ---------------------------------------------------------------------------
-# Provenance weighting  (digester handoff v6.8, Decision 1)
+# Provenance weighting  (digester handoff v6.8, Decision 1, as amended)
 # ---------------------------------------------------------------------------
 #
-# Each term is weighted by the acceptance tier of the assertion carrying it.
-# Tier definitions live in the write-report skill's acceptance-rubric.md.
+# ONE QUESTION: does this term appear anywhere in the subject's turns?
 #
-# Only the structurally detectable tiers are assigned here -- 0, 5, 6 and 7.
-# Tiers 1-4 require one semantic judgment (endorsement versus objection after
-# a reference) and are DEFERRED, as the handoff permits. A deferred tier is
-# never guessed; the term simply falls to whichever structural tier applies.
+#     yes -> SUBJECT_WEIGHT    no -> ASSISTANT_WEIGHT
+#
+# That is the whole rule. It replaces an eight-tier acceptance ladder, and the
+# simplification is Nick's, for two reasons that are worth keeping written down.
+#
+# ACCEPTANCE IS NOT WHAT KEYWORDS NEED. The rubric's tiers 1-4 turn on whether
+# the subject endorsed or objected after referring to something, which is a
+# semantic judgment: tone, hedging, what a "yes, but" is conceding. An AI
+# reading the exchange can weigh that; procedural code cannot, and a marker
+# list matching "agreed" and "no" would be confidently wrong on exactly the
+# cases that matter. Tiers 1-4 belong to the reporting skill. The pipeline
+# never had them and now does not pretend to approximate them.
+#
+# QUOTING DEMONSTRATES STAKE, NOT DISTANCE. The earlier implementation treated
+# blockquoted text in a subject turn as near-worthless (tier 6, weight 2), on
+# the theory that quoting an assertion does not transfer it. That is right for
+# ATTRIBUTION and wrong for ABOUTNESS. Choosing to reproduce a passage is an
+# act of engagement with its terminology, whoever first wrote it. If the
+# subject later changes the terminology, their newer usage simply outnumbers
+# the old one and comes to dominate on frequency alone -- no recency rule
+# needed.
+#
+# Dropping the quote distinction also removes the only genuinely unreliable
+# input this weighting had. Blockquote markers depend on the subject
+# re-prefixing pasted text, which is work nobody does consistently; and a
+# quotation of Matt, of a past self, or of another chat is indistinguishable
+# from a quotation of this conversation's assistant. Measured on a real case,
+# an unmarked external quote put someone else's vocabulary at full subject
+# weight -- a 64x error in the worst direction. Under the rule above the
+# question never arises, because quoted text counts for the subject either way.
+#
+# What survives is the part that is structural rather than semantic: in a
+# converted export, `## Human` versus `## Assistant` is ground truth from the
+# export data, and in a speaker-labelled document the labels are explicit.
+# Whose turn a term appears in is a fact about the file, not an interpretation
+# of it.
 
-TIER_WEIGHTS: dict[int, int] = {0: 128, 1: 64, 2: 32, 3: 16,
-                                4: 8, 5: 4, 6: 2, 7: 1}
+# The ratio is the acceptance ladder's own endpoints, kept because they were
+# already agreed: the subject's own assertions against material the subject
+# never touched. Because TF is sublinear, 128:1 becomes a +log(128) bonus
+# rather than a 128x one.
+SUBJECT_WEIGHT = 128
+ASSISTANT_WEIGHT = 1
 
-# Where a term was found. Used to resolve its tier.
-_SUBJECT_PLAIN = "subject_plain"    # non-quoted text in a subject turn
-_SUBJECT_QUOTE = "subject_quote"    # blockquoted text inside a subject turn
-_ASSISTANT     = "assistant"        # any non-subject turn
-_NEUTRAL       = "neutral"          # text before the first turn marker
-
-
-def _split_quoted(segment: str) -> tuple[str, str]:
-    """Split a subject turn into (non-quoted, quoted) text.
-
-    Blockquoted text in a subject turn is quoted material, not the subject's
-    own assertion -- quoting an assertion does not transfer it. The quote is
-    kept and tiered separately rather than discarded.
-    """
-    plain: list[str] = []
-    quoted: list[str] = []
-    for line in segment.splitlines():
-        (quoted if BLOCKQUOTE_RE.match(line) else plain).append(line)
-    return "\n".join(plain), "\n".join(quoted)
+# Where a term was found.
+_SUBJECT   = "subject"      # anywhere in the subject's turns, quoted or not
+_ASSISTANT = "assistant"    # any non-subject turn
+_NEUTRAL   = "neutral"      # text before the first turn marker
 
 
 def _turn_spans(text: str, structure: str,
                 subject_names: set[str] | None) -> list[tuple[str, str]] | None:
-    """Split a document into (kind, text) spans in document order.
+    """Split a document into (whose, text) spans in document order.
 
     Returns None when the spans cannot be attributed safely -- for a
     speaker-labelled document whose subject cannot be identified.
@@ -366,10 +384,11 @@ def _turn_spans(text: str, structure: str,
             spans.append((_NEUTRAL, text[:marks[0][0]]))
         for i, (_, content_start, role) in enumerate(marks):
             end = marks[i + 1][0] if i + 1 < len(marks) else len(text)
-            kind = _SUBJECT_PLAIN if role in SUBJECT_ROLES else _ASSISTANT
+            kind = _SUBJECT if role in SUBJECT_ROLES else _ASSISTANT
             spans.append((kind, text[content_start:end]))
+        return spans
 
-    elif structure == STRUCT_LABELLED:
+    if structure == STRUCT_LABELLED:
         marks = find_speaker_labels(text)
         if not marks:
             return None
@@ -379,7 +398,7 @@ def _turn_spans(text: str, structure: str,
         else:
             # Exactly one non-AI speaker resolves the subject on its own.
             # Two or more human names (Nick and Matt, say) is ambiguous, and
-            # guessing would put the wrong person's words at tier 0.
+            # guessing would put the wrong person's words at subject weight.
             human = {n for n in names if n.lower() not in AI_SPEAKER_NAMES}
             subjects = human if len(human) == 1 else set()
         if not subjects:
@@ -390,48 +409,18 @@ def _turn_spans(text: str, structure: str,
             end = marks[i + 1][0] if i + 1 < len(marks) else len(text)
             # Unlabelled prose continues the last labelled speaker, so the
             # span simply runs to the next label.
-            kind = _SUBJECT_PLAIN if name in subjects else _ASSISTANT
+            kind = _SUBJECT if name in subjects else _ASSISTANT
             spans.append((kind, text[content_start:end]))
+        return spans
 
-    else:
-        return None
-
-    # Separate blockquotes out of subject spans.
-    resolved: list[tuple[str, str]] = []
-    for kind, seg in spans:
-        if kind == _SUBJECT_PLAIN:
-            plain, quoted = _split_quoted(seg)
-            if plain.strip():
-                resolved.append((_SUBJECT_PLAIN, plain))
-            if quoted.strip():
-                resolved.append((_SUBJECT_QUOTE, quoted))
-        else:
-            resolved.append((kind, seg))
-    return resolved
-
-
-def _tier_for(kinds: set[str], first_kind: str) -> int:
-    """Resolve a term's acceptance tier from where it appears.
-
-    tier 0 -- the subject's own words, unquoted
-    tier 5 -- first used by the assistant, taken up by the subject unquoted
-    tier 6 -- reaches the subject only inside a quotation
-    tier 7 -- never leaves the assistant's turns
-    """
-    if _SUBJECT_PLAIN in kinds:
-        if _ASSISTANT in kinds and first_kind == _ASSISTANT:
-            return 5
-        return 0
-    if _SUBJECT_QUOTE in kinds:
-        return 6
-    return 7
+    return None
 
 
 def provenance_weighted_counts(
     body: str, structure: str,
     subject_names: set[str] | None = None,
 ) -> tuple[dict[str, float] | None, str]:
-    """Term counts scaled by the acceptance tier of the assertion carrying them.
+    """Term counts weighted toward the subject's own vocabulary.
 
     Returns (counts, reason). `counts` is None when the document cannot be
     weighted, and `reason` says why. Nothing is discarded: every term that
@@ -446,23 +435,24 @@ def provenance_weighted_counts(
         return None, "subject could not be identified from the speaker labels"
 
     counts: Counter = Counter()
-    kinds: dict[str, set[str]] = {}
-    first_kind: dict[str, str] = {}
+    subject_terms: set[str] = set()
 
-    for kind, segment in spans:
-        for term in _tokenize(segment):
-            counts[term] += 1
-            kinds.setdefault(term, set()).add(kind)
-            first_kind.setdefault(term, kind)
+    for whose, segment in spans:
+        terms = _tokenize(segment)
+        counts.update(terms)
+        if whose == _SUBJECT:
+            subject_terms.update(terms)
 
     if not counts:
         return None, "no tokens survived filtering"
 
-    weighted: dict[str, float] = {}
-    for term, count in counts.items():
-        tier = _tier_for(kinds[term], first_kind[term])
-        weighted[term] = count * TIER_WEIGHTS[tier]
-    return weighted, f"weighted over {len(spans)} spans"
+    weighted = {
+        term: count * (SUBJECT_WEIGHT if term in subject_terms
+                       else ASSISTANT_WEIGHT)
+        for term, count in counts.items()
+    }
+    return weighted, (f"{len(subject_terms):,} of {len(counts):,} terms "
+                      f"appear in the subject's turns")
 
 
 def _tokenize(body: str) -> list[str]:

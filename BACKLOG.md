@@ -159,23 +159,17 @@ So the split is by what each tool can honestly judge:
 
 | | Assigns | How |
 |---|---|---|
-| **Pipeline** | tiers 0, 5, 6, 7 | Structural — where a term appears, and whether it is quoted |
-| **Reporting skill** | tiers 1–4 | Semantic — an AI reading the exchange |
+| **Pipeline** | nothing on this scale | It weights by whose turn a term appears in, not by acceptance |
+| **Reporting skill** | tiers 1–4, and the rest | Semantic — an AI reading the exchange |
 
-The pipeline's implementation already reflects this. A term that would be tier
-1–4 falls to whichever structural tier fits, and no tier is guessed. That is
-now the permanent design, not a gap awaiting a classifier.
-
-One consequence worth knowing: the pipeline's reading is therefore
-conservative. A term the subject took up while *rejecting* it scores tier 5
-(weight 4) rather than tier 3 (weight 16). It under-weights rather than
-misattributes, which is the safe direction.
+**The pipeline no longer uses the acceptance scale at all.** It was simplified
+to a single question: does this term appear anywhere in the subject's turns?
+Yes gets 128, no gets 1. See *Keyword weighting* under the closed items for
+why, and for the failure that simplification removed.
 
 Nick has been declaring agreement more explicitly, and has added styles of
-partial agreement. Both are for the reporting skill to read. They also help the
-pipeline indirectly, though not through these tiers: restating something in
-your own words is what tier 5 detection keys on, so the habit makes the
-structural signal stronger.
+partial agreement. Both are for the reporting skill to read. Neither is
+something the pipeline attempts to interpret.
 
 ---
 
@@ -333,6 +327,41 @@ as a named pipeline input in the pipeline guide alongside `project_names.tsv`.
 
 The version-numbering oddity found while doing this is under item 4, since it
 goes back to the same place.
+
+## Keyword weighting simplified to one question
+
+**Decision 1, as amended by Nick.** The original built an eight-tier weighting
+from the acceptance rubric: tier 0 for the subject's own unquoted words, 5 and
+6 for terms the assistant introduced and the subject took up, 7 for terms that
+never left the assistant. It now asks one thing — does this term appear
+anywhere in the subject's turns — and answers 128 or 1.
+
+Two reasons, both Nick's.
+
+**Acceptance is not what keywords need.** Weighting by endorsement requires
+reading tone and hedging, and working out what a "yes, but" is conceding. That
+is the reporting skill's job. The pipeline should not approximate it.
+
+**Quoting demonstrates stake, not distance.** The old scheme put blockquoted
+text in a subject turn at weight 2, near the floor, reasoning that quoting an
+assertion does not transfer it. That is right for attribution and wrong for
+aboutness: choosing to reproduce a passage is engagement with its terminology,
+whoever wrote it first. If the subject later changes terminology, the newer
+usage outnumbers the old and comes to dominate on frequency alone.
+
+The simplification also removed the only unreliable input the weighting had.
+Blockquote markers depend on re-prefixing pasted text, which nobody does
+consistently, and a quotation of Matt, of a past self, or of another chat is
+indistinguishable from a quotation of this conversation's assistant. Measured
+on a real case, an unmarked external quote put someone else's vocabulary at
+full subject weight — 64x too high, in the worst direction. Under the current
+rule the question never arises: identical weights with or without markers,
+verified.
+
+What survives is structural rather than semantic. In a converted export
+`## Human` versus `## Assistant` is ground truth from the export data; in a
+speaker-labelled document the labels are explicit. Whose turn a term appears in
+is a fact about the file, not an interpretation of it.
 
 ## HTML relative image sources
 
