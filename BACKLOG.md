@@ -1,17 +1,186 @@
 # Backlog
 
-Work agreed but not built, and questions waiting on an answer. Items are drawn
-from the digester handoff (v6.8) and from findings while implementing it.
+Open work and open questions, from the digester handoff (v6.8) and from
+findings while implementing it.
 
-Owners follow the handoff's convention: **Assistant** for code and
-verification, **Nick** for rulings, Drive operations, and anything needing the
-real corpus.
+**Organised by who is blocked**, not by category, so the live items are at the
+top and the finished ones are out of the way. Closed entries are kept rather
+than deleted — several of them correct a claim in the handoff, and that
+reasoning is worth being able to find.
+
+## At a glance
+
+| # | Item | Blocked on |
+|---|---|---|
+| 1 | Keyword soft tier — run the audit, then rule | Nick |
+| 2 | ChatGPT export media — run the inspection | Nick |
+| 3 | `3-Reporting` stamping — rule whether it is needed | Nick |
+| 4 | Reference documents contradict the code | Nick |
+| 5 | ChatGPT export media — build the fix | Item 2 |
+| — | Acceptance tiers 1–4 | Deferred by design |
 
 ---
 
-## Waiting on the corpus
+# Waiting on Nick
 
-### docx unresolved drawings — Decision 7
+## 1. Does the keyword filter's soft tier survive contact with the corpus?
+
+**The one to do first.** It is the only open item where the current code could
+be quietly doing damage — throwing away real words — and the audit that settles
+it takes one run.
+
+Decision 8 is built. Rejection runs in two tiers, and only the second is in
+question.
+
+**Hard tests** cover shapes no English word takes: no vowel (counting `w`, so
+Welsh survives), letters mixed with digits, `q` not followed by `u`, a letter
+three times running, a seven-consonant run. Safe with no other evidence, and
+not in doubt.
+
+**Soft tests** are implausible letter sequences — an impossible letter pair, a
+six-consonant run — rejected only when nothing vetoes them. A veto is the term
+appearing in a lexicon, appearing capitalised mid-sentence, or recurring across
+three or more documents.
+
+The soft tier needs judging for two reasons. It is the tier that can throw away
+a real word. And it is the tier doing the work: of the four artifacts the
+handoff names, the hard tests catch two and the soft tests catch the other two.
+
+**How to settle it.** Run a digest with `--report-artifacts rejected.md`, or the
+wrapper's `--audit`. Read the *Soft rejections* table. Anything real in it is a
+false positive, and the answer is either a lexicon entry or dropping the tier.
+
+**Why synthetic testing is not enough.** Two false-positive bugs were found and
+fixed during implementation, both invisible to the fixtures that were passing at
+the time. The first used vowel ratio and threw away `clock`, `clocks` and
+`handling` — `kxwoj` and `clock` have identical vowel ratios, so counting vowels
+cannot separate them. The second read sentence-initial capitals as evidence of a
+proper noun, which protected whatever happened to open a sentence and put `the`
+in the harvested name list. A third of the same kind is likelier than not.
+
+**On the dictionary.** It is currently unexercised. With no lexicon, no corpus
+statistics and no body text, the present tests catch all eight test artifacts
+and lose none of twenty-four real words, so nothing in testing has yet needed a
+veto. Its value is protection for real words the test set does not contain,
+which is exactly what the audit will reveal. An earlier claim that the
+dictionary was "earning its place" was made about the vowel-ratio version and
+was not revisited after that version was replaced; it was also circular, since
+the dictionary passed to that test was built from the test's own answer key.
+
+## 2. ChatGPT export media — run the inspection
+
+Run `inspect_chatgpt_assets.py` against one real ChatGPT export and paste the
+output. It is read-only and prints no conversation text — only content types,
+the keys each carries, sample pointer identifiers, and whether those match
+files on disk.
+
+```
+python inspect_chatgpt_assets.py "<export folder>" --report assets.txt
+```
+
+Needed because the export format has changed across ChatGPT versions, and the
+pointer-to-file mapping should be known rather than guessed. Unblocks item 5.
+
+## 3. `3-Reporting` stamping — Decision 2
+
+May be unnecessary. The `write-report` skill now writes frontmatter in the same
+format, so reports arrive already stamped. The open question is whether enough
+hand-written or pasted material reaches `3-Reporting` to justify a stamping
+pass at all. That is a question about your filing habits, not about the code.
+
+`4-Canon` is settled and needs no ruling: no stamping, ever. Released artifacts
+are catalogued by companion sidecars (`tier_sidecars.py`) which leave the
+artifact byte-identical.
+
+## 4. Reference documents contradict the code
+
+To take back to the source conversation. A message covering all of this was
+drafted and sent separately.
+
+**The sidecar ruling.** `repository-structure.md` v1.10 still says under
+*Completeness of 2-Digested* that "the pipeline copies through every file it
+cannot convert". The glossary says the same. Under the sidecar ruling this is
+no longer accurate: `2-Digested` is a complete **catalog** of `1-Raw`, not a
+complete copy. Media and export auxiliaries are copied; everything else is
+represented by a sidecar. The search skill reads these files, so the wording
+matters.
+
+**A version-numbering question**, for whoever maintains the reference files.
+`project-manifest-format.md` is headed **Version 2.3** but its example manifest
+carries `"manifest_format_version": "1.0"`, while its *Versioning* section says
+the two numbers move together. Three claims that cannot all hold.
+
+The likely explanation is that the header number is a **bundle** version,
+stamped across every reference file at once, rather than a version of that
+document. The evidence is strong: the same glossary text now carries **1.6** in
+the copy given to this session, **2.3** in the `update-project-manifest` skill
+bundle, and **4.4** in the `write-report` skill bundle, the files being
+otherwise identical line for line.
+
+If that reading is right, the manifest format really is at 1.0, the example is
+correct, and the sentence claiming the two versions track each other is the
+error. Nothing for this pipeline either way — it ignores the field — but anyone
+writing a validator would not know which number to expect.
+
+---
+
+# Waiting on me
+
+## 5. ChatGPT export media — build the fix
+
+**Blocked on item 2.**
+
+`chatgpt_to_markdown.extract_text` discards the multimodal content dict,
+emitting `[<content_type> content omitted]` and dropping the `asset_pointer`
+field that sits in it. The link between a conversation and its images exists in
+the export and the converter throws it away. This is the path covering the
+1,446 uncarried files.
+
+The Claude side is better placed — `render_files` already reads `file_name` and
+`file_uuid`.
+
+---
+
+# Deferred by design
+
+## Acceptance tiers 1–4 — Decision 1
+
+Tiers 1–4 turn on one semantic judgment: endorsement versus objection after a
+reference. The handoff permits deferring it, and the implementation does defer
+— terms fall to whichever structural tier applies (0, 5, 6 or 7) and no tier is
+guessed.
+
+Building it would mean either a marker-based approximation or a classifier over
+a small set of passages. Neither is needed for the ranking to work.
+
+---
+
+# Operational notes
+
+Awareness rather than work.
+
+## Source identity only populates on re-digestion
+
+`source_sha256` and `source_bytes` are written at digestion time, so existing
+digested output does not carry them. Until a re-run, a renamed source still
+reports as absent rather than as a rename — correctly, since there is nothing
+to match on. No action needed beyond knowing why the first run after this
+change reports differently from the one before it.
+
+Found the hard way: `Creatures (Abortions)：  Undead.docx` was reported as
+having no source in `1-Raw`, when the raw file had simply been renamed to
+`Creatures (Aberrations)：  Undead.docx`. Under the old delete behaviour a
+spelling fix would have destroyed good output.
+
+---
+
+# Closed, with the evidence
+
+Kept because the reasoning is worth finding again, not because anything is
+pending.
+
+## docx unresolved drawings — Decision 7
+
 **Resolved. No media was being lost; the figure was our own false positive.**
 
 The premise was that a 43,639-word docx reporting `unresolved_drawings: 433`
@@ -64,7 +233,7 @@ Eight image files across six documents exist in the package without being
 referenced from `document.xml`. Spot-checking the largest
 (`Core Mechanic and Probability System.docx`, 9 in the package, 8 referenced):
 the eight referenced are ~180 KB matplotlib charts, extracted and linked
-correctly, and the ninth is a **70-byte PNG** -- a 1x1 pixel, the kind of
+correctly, and the ninth is a **70-byte PNG** — a 1x1 pixel, the kind of
 spacer that arrives with pasted HTML. The file also carries `header1`/`header2`
 relationship parts, so header decoration is the other candidate for that class.
 
@@ -72,223 +241,82 @@ No frontmatter counter was added for them. A field reporting eight
 pixel-spacers and header graphics as unreferenced would imply a loss that did
 not occur, which is worse than silence.
 
-### AI export media pointers — Decision 7
-**Owner: Nick to run the inspection, Assistant to build.**
+## Pipeline self-check — Decision 5
 
-`chatgpt_to_markdown.extract_text` discards the multimodal content dict,
-emitting `[<content_type> content omitted]` and dropping the `asset_pointer`
-field that sits in it. The link between a conversation and its images exists in
-the export and the converter throws it away. This is the path covering the
-1,446 uncarried files.
+**Built** as `pipeline_selfcheck.py`. All six checks: unconverted files, index
+integrity, frontmatter presence, filename conformance, duplicate content by
+normalized token windows, and suggest-never-delete. `4-Canon` is exempt from
+the frontmatter check.
 
-Needed before building: the distinct `content_type` values and a sample of
-`asset_pointer` strings from one real export, plus that export folder's
-filenames, so the pointer-to-file mapping is known rather than guessed. The
-export format has changed across ChatGPT versions.
-
-The Claude side is better placed — `render_files` already reads `file_name` and
-`file_uuid`.
-
----
-
-## Agreed, not yet built
-
-### Pipeline self-check — Decision 5
-**Built** as `pipeline_selfcheck.py`. Kept here for the record of what it covers.
-
-All six checks: unconverted files, index integrity,
-frontmatter presence, filename conformance, duplicate content by normalized
-token windows, and suggest-never-delete. `4-Canon` is exempt from the
-frontmatter check.
-
-The completeness check is well-defined now that every file in `1-Raw` lands in
+The completeness check is well-defined because every file in `1-Raw` lands in
 exactly one of three states in `2-Digested`: converted, copied through, or
 represented by a sidecar carrying `source_path`.
 
-Duplicate detection must fingerprint several windows through each document, not
+Duplicate detection fingerprints several windows through each document, not
 only the head — a pasted copy may begin at a different point than an export of
-the same conversation. Where candidates differ, report the passages present in
-one and not the other: **that is where hand-added commentary lives and it must
-not be lost to deduplication.**
+the same conversation. Where candidates differ, the passages present in one and
+not the other are reported: **that is where hand-added commentary lives and it
+must not be lost to deduplication.**
 
----
+## The pipeline does not write `date`
 
-## Waiting on a ruling
+**Built.** Found by `pipeline_selfcheck.py` on its first run against clean
+output: every Markdown file the pipeline wrote was missing `date`, one of the
+four fields `repository-structure.md` says the pipeline writes and search
+relies on. `add_metadata` backfilled `modified` (mtime, UTC) and stamped
+`indexed_at`, but never `date`, which is meant to carry the document's own
+local timestamp with offset, matching its filename.
 
-### Frontmatter stamping for 3-Reporting — Decision 2
-**Owner: Nick to rule.**
+Resolved from three sources in order, with the one used recorded in
+`date_source`:
 
-May be unnecessary. The `write-report` skill now writes frontmatter in the same
-format, so reports arrive already stamped. The open question is whether enough
-hand-written or pasted material reaches `3-Reporting` to justify a stamping
-pass at all.
+1. a date the converter already knows — a conversation's `create_time`, a
+   docx's document properties
+2. the timestamp in the filename, where the file follows the convention
+3. the file's mtime, converted to the corpus owner's local zone
 
-`4-Canon` is settled and needs no ruling: no stamping, ever. Released artifacts
-are catalogued by companion sidecars (`tier_sidecars.py`) which leave the
-artifact byte-identical.
+PDF dates are parsed with their timezone offset honoured rather than dropped,
+which would otherwise land a PDF written elsewhere hours out. A file that
+already carries `date` is left alone.
 
-### Does the keyword filter's soft tier survive contact with the corpus?
-**Owner: Nick to rule, after running the audit.**
+## Parameterize the corpus wrappers — Decision 9
 
-Decision 8 is **built**. Rejection runs in two tiers, and only the second is in
-question.
+**Built**, including 9.6. The Loom-specific batch files were replaced by
+generic ones taking the corpus root and remote as parameters:
 
-**Hard tests** cover shapes no English word takes: no vowel (counting `w`, so
-Welsh survives), letters mixed with digits, `q` not followed by `u`, a letter
-three times running, a seven-consonant run. These are safe with no other
-evidence and are not in doubt.
-
-**Soft tests** are implausible letter sequences — an impossible letter pair, a
-six-consonant run — rejected only when nothing vetoes them. A veto is the term
-appearing in a lexicon, appearing capitalised mid-sentence, or recurring across
-three or more documents.
-
-The soft tier is what needs judging, for two reasons. It is the tier that can
-throw away a real word. And it is the tier doing the work: of the four
-artifacts the handoff names, the hard tests catch two and the soft tests catch
-the other two.
-
-**How to settle it.** Run a digest with `--report-artifacts rejected.md`, or the
-wrapper's `--audit`. Read the *Soft rejections* table. Anything real in it is a
-false positive, and the answer is either a lexicon entry or dropping the tier.
-
-**Why synthetic testing is not enough.** Two false-positive bugs were found and
-fixed during implementation, both invisible to the fixtures that were passing at
-the time. The first used vowel ratio and threw away `clock`, `clocks` and
-`handling` — `kxwoj` and `clock` have identical vowel ratios, so counting vowels
-cannot separate them. The second read sentence-initial capitals as evidence of a
-proper noun, which protected whatever happened to open a sentence and put `the`
-in the harvested name list. A third of the same kind is likelier than not.
-
-**On the dictionary.** It is currently unexercised. With no lexicon, no corpus
-statistics and no body text, the present tests catch all eight test artifacts
-and lose none of twenty-four real words, so nothing in testing has yet needed a
-veto. Its value is protection for real words the test set does not contain,
-which is exactly what the audit will reveal. An earlier claim that the
-dictionary was "earning its place" was made about the vowel-ratio version and
-was not revisited after that version was replaced; it was also circular, since
-the dictionary passed to that test was built from the test's own answer key.
-
-### Parameterize the corpus wrappers — Decision 9
-**Owner: Assistant for the scripts, Nick for placement.**
-
-Rename and parameterize so the batch files serve any corpus:
-
-| Current | Becomes |
+| Was | Became |
 |---|---|
 | `sync_loom.bat` | `sync_gdrive_corpus.bat` |
 | `push_loom.bat` | `push_gdrive_corpus.bat` |
 | `merge_loom_to_drive.bat` | `merge_corpus_local_to_drive.bat` |
 | `pull_matt.bat` | `pull_gdrive_folder.bat` |
+| `digest_all.bat` | `corpus_wrapper.template.bat` |
 
-Not in the handoff's table but equally Loom-specific: **`digest_all.bat`**,
-which hardcodes all three library paths. It is the natural candidate to become
-the per-corpus marshaling wrapper. Needs a ruling.
+`digest_all.bat` was not in the handoff's table but hardcoded all three library
+paths, and became the per-corpus marshaling wrapper. No corpus name, local path
+or Drive path appears in any generic script; rclone is found through
+`RCLONE_EXE`, the `PATH`, or a default, by one shared preamble rather than four
+copies of the same check.
 
-The Python engine already takes paths as arguments, so it is closer to
-path-agnostic than the handoff assumes.
-
-Decision 9.6 is **done**: the stray `SKILL.md` is replaced by
-`project-manifest-format.md` v2.3, read from the `update-project-manifest`
-skill's own reference folder. The manifest is consumed by
+**9.6.** The stray `SKILL.md` is replaced by `project-manifest-format.md` v2.3,
+read from the `update-project-manifest` skill's own reference folder. No parser
+change was needed, verified rather than assumed: the manifest is consumed by
 `claude_to_markdown.py`, detected by content shape (`project_uuid` +
-`conversations`) rather than by filename, and unknown keys are read with
-`.get()` and ignored — so `manifest_format_version` needs no parser change,
-verified against a manifest carrying every documented field plus invented ones.
-The manifest is recorded as a named pipeline input in `readme.txt` alongside
-`project_names.tsv`.
+`conversations`) rather than by filename, and every field is read with `.get()`.
+A manifest carrying `manifest_format_version`, every documented field, and
+invented keys besides is still recognised correctly. The manifest is recorded
+as a named pipeline input in the pipeline guide alongside `project_names.tsv`.
 
-One thing to raise with whoever maintains those reference files. The skill
-bundle's `project-manifest-format.md` is headed **Version 2.3** but its example
-manifest carries `"manifest_format_version": "1.0"`, while its *Versioning*
-section says the two numbers move together.
+The version-numbering oddity found while doing this is under item 4, since it
+goes back to the same place.
 
-The likely explanation is that the header number is a BUNDLE version, stamped
-across every reference file at once, rather than a version of that document.
-The evidence: the `glossary.md` shipping in the same bundle is word-for-word
-identical to the glossary v1.6 we were given, differing only in its header,
-which reads 2.3. Same text, different number.
+## HTML relative image sources
 
-If that is right, the manifest format really is at 1.0, the example is correct,
-and the sentence claiming the document version and `manifest_format_version`
-move together is the error. Nothing for this pipeline either way -- it ignores
-the field -- but anyone writing a validator would not know which number to
-expect.
-
----
-
-## Deferred by design
-
-### Acceptance tiers 1–4 — Decision 1
-**Owner: Nick to rule if it is ever wanted.**
-
-Tiers 1–4 turn on one semantic judgment: endorsement versus objection after a
-reference. The handoff permits deferring it, and the implementation does defer
-— terms fall to whichever structural tier applies (0, 5, 6 or 7) and no tier is
-guessed.
-
-Building it would mean either a marker-based approximation or a classifier over
-a small set of passages. Neither is needed for the ranking to work.
-
----
-
-## Findings not yet decisions
-
-### Source identity only populates on re-digestion
-**Owner: Nick, whenever the next full run happens.**
-
-`source_sha256` and `source_bytes` are written at digestion time, so existing
-digested output does not carry them. Until a re-run, a renamed source still
-reports as absent rather than as a rename — correctly, since there is nothing
-to match on. No action needed beyond knowing why the first run after this
-change reports differently from the one before it.
-
-Found the hard way: `Creatures (Abortions)：  Undead.docx` was reported as
-having no source in `1-Raw`, when the raw file had simply been renamed to
-`Creatures (Aberrations)：  Undead.docx`. Under the old delete behaviour a
-spelling fix would have destroyed good output.
-
-### The pipeline does not write `date`
-**Owner: Nick to rule on the source of truth, Assistant to build.**
-
-Found by `pipeline_selfcheck.py` on its first run against clean output: every
-Markdown file the pipeline writes is missing `date`, one of the four fields
-`repository-structure.md` says the pipeline writes and search relies on.
-
-`add_metadata` backfills `modified` (the file's mtime, in UTC) and stamps
-`indexed_at`, but never `date`. The two are not interchangeable: `modified` is
-when the file was last touched on disk, and `date` is meant to carry the
-document's own local timestamp with offset, matching its filename.
-
-The fix is a small backfill; the ruling is what it should draw from, in order
-of preference:
-
-1. a date the converter already knows -- a conversation's `create_time`, a
-   docx's document properties
-2. the timestamp in the filename, where the file follows the convention
-3. the file's mtime, converted to the corpus owner's local zone
-
-Sidecars already write `date` correctly, which is why they do not appear in
-the finding.
-
-### HTML relative image sources
-**Closed.**
-
-`html_to_markdown.make_image_handler` now copies a relative `src=` into
-`<basename>_media/` and rewrites the link, alongside the base64 `data:` URLs it
-already handled. URL-escaped names resolve, a repeated asset copies once, and a
-path escaping the HTML file's own folder is refused rather than followed.
+**Closed.** `html_to_markdown.make_image_handler` now copies a relative `src=`
+into `<basename>_media/` and rewrites the link, alongside the base64 `data:`
+URLs it already handled. URL-escaped names resolve, a repeated asset copies
+once, and a path escaping the HTML file's own folder is refused rather than
+followed.
 
 PDF extraction was verified correct and needed no change: embedded images per
 page plus attachments, both written to `<basename>_media/` and linked.
-
-### Reference documents contradict the sidecar ruling
-**Owner: Nick, in the source conversation.**
-
-`repository-structure.md` v1.10 still says under *Completeness of 2-Digested*
-that "the pipeline copies through every file it cannot convert". The glossary
-v1.6 says the same. Under the sidecar ruling this is no longer accurate:
-`2-Digested` is a complete **catalog** of `1-Raw`, not a complete copy. Media
-and export auxiliaries are copied; everything else is represented by a sidecar.
-
-The search skill reads these files, so the wording matters.
