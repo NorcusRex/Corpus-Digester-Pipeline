@@ -17,7 +17,7 @@ reasoning is worth being able to find.
 | 3 | `3-Reporting` stamping — rule whether it is needed | Nick |
 | 4 | Reference documents contradict the code | Nick |
 | 5 | ChatGPT export media — build the fix | Item 2 |
-| — | Acceptance tiers 1–4 | Deferred by design |
+| — | Acceptance tiers 1–4 | Out of scope — the reporting skill's job |
 
 ---
 
@@ -141,17 +141,41 @@ The Claude side is better placed — `render_files` already reads `file_name` an
 
 ---
 
-# Deferred by design
+# Out of scope for the pipeline
 
 ## Acceptance tiers 1–4 — Decision 1
 
-Tiers 1–4 turn on one semantic judgment: endorsement versus objection after a
-reference. The handoff permits deferring it, and the implementation does defer
-— terms fall to whichever structural tier applies (0, 5, 6 or 7) and no tier is
-guessed.
+**Not deferred work. These belong to the reporting skill, and the pipeline
+cannot have them.** Nick's ruling, and it draws the line in the right place.
 
-Building it would mean either a marker-based approximation or a classifier over
-a small set of passages. Neither is needed for the ranking to work.
+Tiers 1–4 turn on whether the subject endorsed or objected after referring to
+something. The evidence for that is indirect: tone, hedging, what a "yes, but"
+is actually conceding, a partial agreement that accepts one clause and rejects
+another. An AI reading the passage can weigh it. Procedural code cannot, and a
+marker list that pattern-matches "agreed" and "no" would be confidently wrong
+on exactly the cases that matter.
+
+So the split is by what each tool can honestly judge:
+
+| | Assigns | How |
+|---|---|---|
+| **Pipeline** | tiers 0, 5, 6, 7 | Structural — where a term appears, and whether it is quoted |
+| **Reporting skill** | tiers 1–4 | Semantic — an AI reading the exchange |
+
+The pipeline's implementation already reflects this. A term that would be tier
+1–4 falls to whichever structural tier fits, and no tier is guessed. That is
+now the permanent design, not a gap awaiting a classifier.
+
+One consequence worth knowing: the pipeline's reading is therefore
+conservative. A term the subject took up while *rejecting* it scores tier 5
+(weight 4) rather than tier 3 (weight 16). It under-weights rather than
+misattributes, which is the safe direction.
+
+Nick has been declaring agreement more explicitly, and has added styles of
+partial agreement. Both are for the reporting skill to read. They also help the
+pipeline indirectly, though not through these tiers: restating something in
+your own words is what tier 5 detection keys on, so the habit makes the
+structural signal stronger.
 
 ---
 
