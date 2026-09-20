@@ -67,17 +67,24 @@ add_metadata.py           Adds keywords (TF-IDF when corpus has 5+
 
 - **`clean_stale.py`** — Detects (and optionally deletes) digested .md files whose source no longer exists in the raw tree. Report-only by default. See "STALE FILE CLEANUP" section below.
 
-- **`digest_all.bat`** — Convenience wrapper: digests several archive libraries in sequence and runs clean_stale.py against each. Edit the library paths inside it to match your setup. See "DIGESTING MULTIPLE LIBRARIES".
+- **`corpus_wrapper.template.bat`** — The one per-corpus artifact. Copy it into a corpus's `_Tools/`, edit the configuration block at the top, and run it: it mirrors the AI subset, digests, catalogues `4-Canon`, stale-checks and self-checks, optionally pushing to Drive. Replaces the old `digest_all.bat`, which digested several libraries in one run; each corpus now has its own copy. See "DIGESTING MULTIPLE LIBRARIES".
+- **`pipeline_selfcheck.py`** — Six checks over the pipeline's own output: completeness against `1-Raw`, index integrity, frontmatter, filenames, duplicate content. Reports only; it has no deletion path.
+- **`tier_sidecars.py`** — Writes a catalog record beside each artifact in an authored tier, leaving the artifact byte-identical. Used for `4-Canon`.
+- **`inspect_chatgpt_assets.py`** — Read-only report on how a ChatGPT export refers to its images and audio. Prints no conversation text.
+- **`lexicon/`** — Word lists and glossaries used to protect real terms from the keyword artifact filter. See `lexicon/README.md`.
 
 - **`sync_subset.py`** — Generic engine: idempotently mirrors a named subset of digested subfolders from a source tree into a destination. Contains no site-specific knowledge. See "SUBSET MIRROR".
-- **`sync_loom.bat`** — Site launcher (example/active): mirrors the Loom-relevant subset of the digested AI exports into the Loom corpus. Holds the Loom paths; calls sync_subset.py. Lives in the tooling folder.
-- **`loom_ai_subset.txt`** — Site DATA, not tooling: the list of which digested folders are Loom-relevant. Ships here as a starting point but BELONGS WITH THE CORPUS (see install notes), not in the tooling folder.
+- **`sync_gdrive_corpus.bat`** — Generic launcher: takes a selection list, a source export tree and a destination, and calls sync_subset.py. Holds no corpus paths. Called once per source, so a corpus pulling from both Claude and ChatGPT calls it twice — which is what the per-corpus wrapper does.
+- **`<corpus>_ai_subset.txt`** — Corpus DATA, not tooling: the list of which digested folders belong to that corpus. Lives beside the corpus's wrapper in its `_Tools/`, not in the pipeline folder.
 
 Drive transfer helpers (optional -- only if you sync libraries to or from Google Drive). These require rclone, a free third-party tool; they are NOT Python and do NOT touch the converters. See the "GOOGLE DRIVE TRANSFER (rclone)" section below before using them.
 
-- **`merge_loom_to_drive.bat`** — One-time reconciliation: merges a local library up to its Google Drive copy using three guarded passes (two dry runs, then the real upload). Non-destructive.
-- **`push_loom.bat`** — Ongoing use: pushes local library changes up to Google Drive. Non-destructive; never deletes anything in Drive.
-- **`pull_matt.bat`** — Pulls a Drive folder of collaborator docs DOWN into the raw tree, converting native Google Docs to .docx during the copy so the pipeline can read them.
+- **`merge_corpus_local_to_drive.bat`** — One-time reconciliation: merges a local corpus up to its Google Drive copy using three guarded passes (two dry runs, then the real upload). Non-destructive.
+- **`push_gdrive_corpus.bat`** — Ongoing use: pushes local corpus changes up to Google Drive. Non-destructive; never deletes anything in Drive.
+- **`pull_gdrive_folder.bat`** — Pulls a shared Drive folder DOWN into the raw tree, converting native Google Docs to .docx during the copy so the pipeline can read them. Note it is *folder*, not *corpus*: pulling from a shared Drive folder is not specific to any collaborator or corpus.
+- **`_rclone_common.bat`** — Shared preamble for the four above: finds rclone and checks the "drive:" remote exists. Not run directly.
+
+All four take their paths as parameters. Nothing above holds a corpus name, a local path or a Drive path.
 
 The core .py files and the .bat must live in the same folder. The two rename-related files (`rename_chatgpt_projects.py` and `project_names.tsv`) are optional -- the pipeline runs without them. The .bat finds the .py files via its own location, and the orchestrator imports the converters as Python modules.
 
@@ -539,7 +546,7 @@ Verify: `rclone lsd drive:` should list your Drive's top-level folders.
 
 THE THREE SCRIPTS
 
-- **`merge_loom_to_drive.bat`** — Run ONCE, the first time, when the local library and its Drive copy have drifted apart and you want them merged with local winning. It runs three passes and pauses between each:
+- **`merge_corpus_local_to_drive.bat`** — Run ONCE, the first time, when a local corpus and its Drive copy have drifted apart and you want them merged with local winning. It runs three passes and pauses between each:
 
 ```
 Pass 1  Dry run, default comparison
@@ -581,9 +588,9 @@ edits through the Drive web UI. Nothing
 in Drive is ever deleted.
 ```
 
-- **`push_loom.bat`** — Run REPEATEDLY, for ongoing backup, after the one-time merge is done. Same non-destructive logic as Pass 3 of merge_loom_to_drive.bat, but with no prompts. A good habit is to run it after a pipeline session so the Drive copy stays current. Safe to run as often as you like; identical files cost nothing. Two-pass structure: a --dry-run pass prints what it WOULD copy to the console, then the real pass appends its output to a dated log next to the .bat (push_loom_YYYY-MM-DD.log). Same-day re-runs append to the same file.
+- **`push_gdrive_corpus.bat`** — Run REPEATEDLY, for ongoing backup, after the one-time merge is done. Same non-destructive logic as Pass 3 of `merge_corpus_local_to_drive.bat`, but with no prompts. A good habit is to run it after a pipeline session so the Drive copy stays current, which is what the per-corpus wrapper's `--push` does. Safe to run as often as you like; identical files cost nothing. Two-pass structure: a `--dry-run` pass prints what it WOULD copy to the console, then the real pass writes its output to a dated log (`push_<corpus>_YYYY-MM-DD.log`). Same-day re-runs append to the same file.
 
-- **`pull_matt.bat`** — Run before digest_all.bat when a collaborator has new content. This goes the OTHER direction: Drive -> local. It copies a shared Drive folder down into the raw tree, and -- crucially -- uses --drive-export-formats docx so that native Google Docs are exported as .docx during the copy. Without that flag a native Google Doc comes down as a useless pointer stub; with it, you get a real .docx the pipeline reads normally. Real files already in the folder (PDF, xlsx, an already-exported .docx) are copied through untouched. This is also rclone copy, so it is non-destructive in the same way: a file the collaborator deletes from Drive remains in your raw tree until you remove it by hand.
+- **`pull_gdrive_folder.bat`** — Run before digesting when a collaborator has new content. This goes the OTHER direction: Drive -> local. It copies a shared Drive folder down into the raw tree, and -- crucially -- uses --drive-export-formats docx so that native Google Docs are exported as .docx during the copy. Without that flag a native Google Doc comes down as a useless pointer stub; with it, you get a real .docx the pipeline reads normally. Real files already in the folder (PDF, xlsx, an already-exported .docx) are copied through untouched. This is also rclone copy, so it is non-destructive in the same way: a file the collaborator deletes from Drive remains in your raw tree until you remove it by hand.
 
 ```
 The shared folder is addressed by its
@@ -626,42 +633,51 @@ real shared folders.
 
 ```
 Two-pass structure, same as
-push_loom.bat: a --dry-run pass to
-the console showing what WOULD be
-copied, then the real pass appended
-to a dated log next to the .bat
-(pull_matt_YYYY-MM-DD.log).
+push_gdrive_corpus.bat: a --dry-run
+pass to the console showing what
+WOULD be copied, then the real pass
+written to a dated log
+(pull_<dest>_YYYY-MM-DD.log).
 ```
 
-EDITING THE PATHS
+SUPPLYING THE PATHS
 
-Each .bat has its paths set in `set` lines near the top. Open in Notepad and adjust:
+There are no paths to edit. Each script takes them as arguments, and the
+per-corpus wrapper supplies them.
 
-`merge_loom_to_drive.bat` / `push_loom.bat`
+`merge_corpus_local_to_drive.bat` / `push_gdrive_corpus.bat`
 
-- **`LOCAL_LOOM`** — the local library root to back up
-- **`DRIVE_LOOM`** — the Drive destination. rclone path syntax uses forward slashes for nesting, e.g. drive:RPG/_Design/Loom for a folder nested under RPG and _Design in My Drive. Using just drive:Loom would resolve to a top-level Loom\ folder in My Drive -- not the same place. If you accidentally push to the wrong path, the non-destructive nature of rclone copy means nothing is lost; just delete the rogue folder on Drive and re-run with the right path.
+```
+push_gdrive_corpus.bat <LOCAL_ROOT> <DRIVE_PATH> [LOG_DIR]
+```
 
-`pull_matt.bat`
+- **`LOCAL_ROOT`** — the corpus root to back up, the folder holding the four tiers
+- **`DRIVE_PATH`** — the Drive destination. rclone path syntax uses forward slashes for nesting, e.g. drive:RPG/_Design/Loom-Nick for a folder nested under RPG and _Design in My Drive. Using just drive:Loom-Nick would resolve to a top-level folder in My Drive -- not the same place. If you push to the wrong path, the non-destructive nature of rclone copy means nothing is lost; delete the rogue folder on Drive and re-run with the right path.
 
-- **`MATT_FOLDER_ID`** — the immutable Drive ID of the shared folder. Get this from the Drive web UI: open the folder, the URL ends in /folders/<ID>. The ID is used (rather than the folder name) because "Shared with me" folders are not addressable by name from rclone's drive: remote.
-- **`LOCAL_MATT`** — where in the raw tree the files should land
+`pull_gdrive_folder.bat`
+
+```
+pull_gdrive_folder.bat <DRIVE_FOLDER_ID> <LOCAL_DEST> [LOG_DIR]
+```
+
+- **`DRIVE_FOLDER_ID`** — the immutable Drive ID of the shared folder. Get this from the Drive web UI: open the folder, the URL ends in /folders/<ID>. The ID is used (rather than the folder name) because "Shared with me" folders are not addressable by name from rclone's drive: remote.
+- **`LOCAL_DEST`** — where in the raw tree the files should land
 
 A WORD ON THE COLLABORATOR-DOC PROBLEM
 
-If your collaborator is willing to do File -> Download -> Microsoft Word in Google Docs before putting files in the shared folder, then the files arrive as real .docx and `pull_matt.bat`'s export flag is simply redundant (harmless). If they are not, the export flag does the conversion for you automatically. Either way the pipeline only ever sees .docx. You can also skip the script entirely and do a manual "Download folder" from the Drive web UI, which auto-converts native Docs to .docx and arrives as a .zip you extract into the raw tree -- exactly the same end state, just manual. The script earns its keep only when the collaborator updates often enough that doing that by hand becomes a chore.
+If your collaborator is willing to do File -> Download -> Microsoft Word in Google Docs before putting files in the shared folder, then the files arrive as real .docx and `pull_gdrive_folder.bat`'s export flag is simply redundant (harmless). If they are not, the export flag does the conversion for you automatically. Either way the pipeline only ever sees .docx. You can also skip the script entirely and do a manual "Download folder" from the Drive web UI, which auto-converts native Docs to .docx and arrives as a .zip you extract into the raw tree -- exactly the same end state, just manual. The script earns its keep only when the collaborator updates often enough that doing that by hand becomes a chore.
 
 RCLONE LOG FILES
 
 Each rclone .bat runs in two phases on purpose: a `--dry-run` pass that prints to the CONSOLE so you can see what is about to happen, then a real pass that uses rclone's own `--log-file` flag (with `--log-level INFO`) to write a dated log next to the .bat:
 
 ```
-pull_matt.bat              pull_matt_YYYY-MM-DD.log
-push_loom.bat              push_loom_YYYY-MM-DD.log
-merge_loom_to_drive.bat    loom_merge_YYYY-MM-DD.log
+pull_gdrive_folder.bat            pull_<dest>_YYYY-MM-DD.log
+push_gdrive_corpus.bat            push_<corpus>_YYYY-MM-DD.log
+merge_corpus_local_to_drive.bat   merge_<corpus>_YYYY-MM-DD.log
 ```
 
-For `merge_loom_to_drive.bat` the same shape applies, just with three passes instead of two: Pass 1 (default dry-run) and Pass 2 (`--checksum` dry-run) both print to the console with a prompt between each; Pass 3 (the real upload) is the one whose output is captured via `--log-file`. The two prior passes are diagnostic and intentionally NOT recorded -- you read them live before deciding to proceed.
+For `merge_corpus_local_to_drive.bat` the same shape applies, just with three passes instead of two: Pass 1 (default dry-run) and Pass 2 (`--checksum` dry-run) both print to the console with a prompt between each; Pass 3 (the real upload) is the one whose output is captured via `--log-file`. The two prior passes are diagnostic and intentionally NOT recorded -- you read them live before deciding to proceed.
 
 Note on why `--log-file` rather than a shell redirect: in principle, `rclone copy ... >> `file.log` 2>&1` should capture rclone's stderr output to a file. In practice on Windows cmd this came up empty -- rclone appears to bypass stderr for progress output when no log file is specified. Using rclone's own `--log-file` flag works reliably. The visible-vs-recorded trade-off is the same either way.
 
@@ -686,8 +702,9 @@ It classifies every .md in the digested tree into:
 
 - **`ok`** — Source verified present in the raw tree.
 - **`skip`** — A non-conversation export object (Claude project memory, account info, ChatGPT auxiliary file). Not analyzed; never deleted.
-- **`stale-file`** — Frontmatter names a source_file that no longer exists anywhere in the raw tree.
-- **`stale-conv`** — Frontmatter has a conversation_id that appears in no conversations.json under the raw tree (the conversation was deleted from the source platform between exports).
+- **`retired`** — Frontmatter carries `source_retired: true`. The owner has recorded that this source was removed deliberately. Never reported, never deleted.
+- **`absent-file`** — Frontmatter names a source_file that cannot be found anywhere in the raw tree.
+- **`absent-conv`** — Frontmatter has a conversation_id that appears in no conversations.json under the raw tree.
 - **`orphan`** — Has frontmatter but no source_file and no conversation_id -- nothing checkable. This is the signature of files written by very old pipeline versions.
 - **`no-fm`** — No frontmatter at all (possibly a hand-written note you dropped into the digested tree yourself).
 
@@ -697,32 +714,45 @@ DEFAULT IS REPORT-ONLY. Run it with just the two paths and it lists what it foun
 python clean_stale.py <raw_dir> <digested_dir>
 ```
 
-It exits 0 if everything is clean, 1 if anything stale or orphaned was found (useful for scripting). To actually delete:
+It exits 0 if everything is clean, 1 if anything was found (useful for scripting).
 
-- `--delete` — Remove verified-stale files only (stale-file and stale-conv). Prompts for confirmation unless --yes is also given.
-- `--delete-orphans` — Also remove orphan and no-fm files. Use with care: a legitimate hand-written note in the digested tree looks exactly like an orphan.
+**An absent source is not evidence that the output is stale.** From the digested side, "the source was deleted upstream" and "the source was removed on purpose" look identical, and only you know which happened. Bulky AI exports get cleared to reclaim disk after digestion; deleting the digested output in that case destroys the only remaining copy. A source may also simply have been renamed.
+
+So before reporting anything absent, the script looks for it by content. A digested file recording `source_sha256` whose bytes turn up in the raw tree under another name is reported as a RENAME, with both names, and is never deletable. Size is matched first, so only genuine size-matches are hashed rather than the whole tree.
+
+To delete:
+
+- `--delete` — Enters delete mode. On its own it now removes NOTHING; the categories below need their own flags.
+- `--delete-source-absent` — Remove files whose source cannot be found. Only when you know the sources are gone for good.
+- `--delete-orphans` — Remove orphan and no-fm files. Use with care: a legitimate hand-written note in the digested tree looks exactly like an orphan.
+- `--max-delete-fraction N` — Refuse to delete more than this share of the analyzed files (default 0.10). A deletion that large is usually a mis-pointed raw directory, not a cleanup.
+- `--force` — Override that guardrail. Requires `--yes` as well, so a large deletion can never be a single typo.
 - `--yes` — Skip the confirmation prompt (for scripting).
-- `--verbose` — Print every file's classification, not just the stale ones.
+- `--verbose` — Print every file's classification.
 
 When a file is deleted, its paired NotebookLM sidecar (the `.nlm.md` next to it) is removed too, so the two never drift apart.
 
-The conservative split is deliberate: the two "verified" categories are safe to delete because the script can prove the source is gone. Orphans cannot be proven stale -- they might be your own notes -- so removing them takes the separate, explicit `--delete-orphans` flag. This mirrors the pipeline's general rule: never destroy what you cannot verify is safe to destroy.
+To stop a deliberately retired source being reported at all, add `source_retired: true` to the digested file's frontmatter. That records the intent in the file itself rather than depending on which flag someone remembers to pass.
 
 ## DIGESTING MULTIPLE LIBRARIES
 
-`digest_all.bat` runs the pipeline against several libraries in one go, then runs `clean_stale.py` against each. It exists so you do not have to launch the pipeline by hand once per library.
+Each corpus has its own copy of `corpus_wrapper.template.bat` in its `_Tools/` folder. The wrapper runs the pipeline against that corpus, catalogues `4-Canon`, runs `clean_stale.py` and the self-check, and optionally pushes to Drive. It exists so you do not have to launch each step by hand.
 
-Open it in Notepad. Each library is a pair of lines -- a digest call and (if the stale check is on) a stale-check call -- using explicit raw and digested paths. Edit those paths to your setup. Comment out a library by prefixing its lines with REM.
+This replaced `digest_all.bat`, which digested several libraries in one run with their paths written into it. One wrapper per corpus means each corpus carries its own configuration — its selection list, its glossaries, its subject name — instead of all of them being baked into one shared file. To digest several corpora, run each wrapper.
 
-The first command-line argument selects the stale-check mode:
+Open your copy in Notepad and edit the CONFIGURATION block at the top: where the pipeline lives, this corpus's root, its Drive path, the subject name, and optionally a glossaries folder. Nothing below that block needs changing.
 
-(no argument)        Digest, then REPORT stale files for each library. Nothing deleted. This is the safe default.
+The command-line argument selects how much it does:
 
-- `--skip-stale` — Digest only. No stale check at all.
-- `--delete-stale` — Digest, then delete verified-stale files. Prompts per library.
-- `--delete-orphans` — Digest, then delete verified-stale AND orphans, without prompting. The aggressive option; only use it when you have already reviewed a report run and trust the result.
+(no argument)        Digest, catalogue `4-Canon`, stale-check, self-check. Nothing deleted. This is the safe default.
 
-Typical use is to just double-click it (no argument) and read the stale reports, then re-run with `--delete-stale` if the reports look right. The destructive modes are never the default and never silent.
+- `--sync` — Also mirror the selected AI conversations in first.
+- `--push` — Also push the result to Drive.
+- `--all` — Everything.
+- `--audit` — Also write a rejected-keyword report, for judging the keyword artifact filter against this corpus.
+- `--dry-run` — Show what would happen; change nothing.
+
+**The wrapper never deletes.** The stale check and the self-check report only. Removing anything means running `clean_stale.py` yourself, deliberately, with the flags above. That is a change from the old `digest_all.bat`, whose `--delete-stale` would have removed digested output whose source had merely been renamed or cleared to save space.
 
 ## SUBSET MIRROR (sync_subset.py)
 
@@ -743,11 +773,13 @@ IMPORTANT: within a selected folder, destination-only files are deleted so the m
 All site-specific knowledge lives in DATA, never in the engine:
 
 - The selection list (one folder name per line; # comments and blank lines ignored) is corpus configuration. It lives WITH THE CORPUS, not in this tooling folder -- the same way project_names.tsv is data the pipeline reads but does not contain.
-- A thin site launcher .bat holds the site paths and calls the generic engine. See sync_loom.bat for the worked example.
+- A thin per-corpus wrapper holds the paths and calls the generic engine. See `corpus_wrapper.template.bat` for the worked example.
 
 This generic-engine / site-launcher / site-data split is the same separation the rest of the pipeline already uses, and it means the same engine serves any future subset need (a different topic, a collaborator's folders, an Evernote notebook set) with only a new data list and a new thin launcher -- no code change.
 
-`sync_loom.bat` is the Loom-specific launcher. It mirrors the Loom-relevant subset of the digested AI exports into the Loom corpus, preserving the source split under FromNick\Notes\AI\: files land in FromNick\Notes\AI\Claude\Conversations\Exported\ and FromNick\Notes\AI\ChatGPT\Conversations\Exported\. The "Exported" subfolder distinguishes auto-mirrored files from hand-curated sibling folders (Copied\, Output\). It auto-discovers the newest dated export folder under each 2-Digested root by filesystem date (NOT by name -- the export folder names are not zero-padded, so a name sort would be wrong), and echoes the resolved paths at the top of each run so you can confirm it picked the right export. Flags (`--prune`, `--dry-run`, `--verbose`) pass through to both source runs. To extend it to another export source later, copy one SECTION block in the .bat and point it at that source; the engine does not change.
+`sync_gdrive_corpus.bat` is the generic launcher. It takes a selection list, one source export tree and one destination, so a corpus drawing on both Claude and ChatGPT calls it twice — which is what the per-corpus wrapper does, mirroring into FromNick\Notes\AI\Claude\Conversations\Exported\ and FromNick\Notes\AI\ChatGPT\Conversations\Exported\ respectively. The "Exported" subfolder distinguishes auto-mirrored files from hand-curated sibling folders (Copied\, Output\).
+
+It auto-discovers the newest dated export folder under the source root by filesystem date (NOT by name -- the export folder names are not zero-padded, so a name sort would be wrong), and echoes the resolved paths at the top of each run so you can confirm it picked the right export. Flags (`--prune`, `--dry-run`, `--verbose`) pass through to sync_subset.py. To add another export source, add another call; nothing in the script changes.
 
 ## GOOGLE SHEETS
 

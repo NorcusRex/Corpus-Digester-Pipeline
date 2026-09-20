@@ -127,17 +127,47 @@ pass at all.
 are catalogued by companion sidecars (`tier_sidecars.py`) which leave the
 artifact byte-identical.
 
-### Reject extraction artifacts from keywords — Decision 8
-**Owner: Nick to rule on scope.**
+### Does the keyword filter's soft tier survive contact with the corpus?
+**Owner: Nick to rule, after running the audit.**
 
-Keyword lists contain strings such as `erlyjewxq`, `jauuimuv-wmcjrfg`, `kxwoj`
-and `lz-pirirgptx` — conversion artifacts, not words. The current filters do
-not catch them: tokens need only start with a letter and reach four characters.
+Decision 8 is **built**. Rejection runs in two tiers, and only the second is in
+question.
 
-Structural filters (no vowels, implausible consonant runs, mixed alphanumeric
-noise) are stdlib-only and catch all four examples. The handoff also suggests a
-dictionary check, which needs a word list Python does not ship — a dependency
-decision, and probably unnecessary.
+**Hard tests** cover shapes no English word takes: no vowel (counting `w`, so
+Welsh survives), letters mixed with digits, `q` not followed by `u`, a letter
+three times running, a seven-consonant run. These are safe with no other
+evidence and are not in doubt.
+
+**Soft tests** are implausible letter sequences — an impossible letter pair, a
+six-consonant run — rejected only when nothing vetoes them. A veto is the term
+appearing in a lexicon, appearing capitalised mid-sentence, or recurring across
+three or more documents.
+
+The soft tier is what needs judging, for two reasons. It is the tier that can
+throw away a real word. And it is the tier doing the work: of the four
+artifacts the handoff names, the hard tests catch two and the soft tests catch
+the other two.
+
+**How to settle it.** Run a digest with `--report-artifacts rejected.md`, or the
+wrapper's `--audit`. Read the *Soft rejections* table. Anything real in it is a
+false positive, and the answer is either a lexicon entry or dropping the tier.
+
+**Why synthetic testing is not enough.** Two false-positive bugs were found and
+fixed during implementation, both invisible to the fixtures that were passing at
+the time. The first used vowel ratio and threw away `clock`, `clocks` and
+`handling` — `kxwoj` and `clock` have identical vowel ratios, so counting vowels
+cannot separate them. The second read sentence-initial capitals as evidence of a
+proper noun, which protected whatever happened to open a sentence and put `the`
+in the harvested name list. A third of the same kind is likelier than not.
+
+**On the dictionary.** It is currently unexercised. With no lexicon, no corpus
+statistics and no body text, the present tests catch all eight test artifacts
+and lose none of twenty-four real words, so nothing in testing has yet needed a
+veto. Its value is protection for real words the test set does not contain,
+which is exactly what the audit will reveal. An earlier claim that the
+dictionary was "earning its place" was made about the vowel-ratio version and
+was not revisited after that version was replaced; it was also circular, since
+the dictionary passed to that test was built from the test's own answer key.
 
 ### Parameterize the corpus wrappers — Decision 9
 **Owner: Assistant for the scripts, Nick for placement.**
