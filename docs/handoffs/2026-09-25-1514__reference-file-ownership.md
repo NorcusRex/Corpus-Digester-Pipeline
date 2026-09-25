@@ -35,6 +35,27 @@ This is recorded in the repository at `references/README.md`, with a table of
 each file's version and the date received, so a version mismatch is visible
 rather than silent.
 
+## Three roles
+
+Settled alongside the canonical-source decision, and worth stating because it
+names the parties the rest of this note refers to:
+
+| Role | Who | Authority |
+|---|---|---|
+| **PM** | Nick | Rules on scope and priority; carries files between the other two |
+| **Designer** | this conversation, AI Methods | Owns the shared reference files — requirements, vocabulary, contracts |
+| **Developer** | the `Corpus-Digester-Pipeline` repository | Owns the code and `pipeline-conventions.md` — mechanisms |
+
+**Designer and Developer have no channel to each other.** Every change crosses
+through PM as a file. That is why versions carry weight here rather than being
+bookkeeping: a file is the only channel, so a copy that has fallen behind is an
+unnoticed disagreement, not a cosmetic lag.
+
+It also sets the expectation for everything below. The Developer will not edit a
+shared file to fix any of the problems in this note, even where the fix is
+obvious and small. Each one comes back as a new version from the Designer, or it
+does not happen.
+
 ## Who owns which fact
 
 A fact both sides need lives in a shared file. A fact one side needs lives in
@@ -184,7 +205,8 @@ n-grams unchanged and the lexicon already accepts multi-word entries.
 
 **Nick's own position.** That the canonical source of both shared files is the
 claude.ai side, both being design artifacts. That the `Owner` column should
-distinguish Chat/Design from Code authority. That the three-layer loop is worth
+distinguish Chat/Design from Code authority. The three-role model — PM,
+Designer, Developer — and the assignment of each party to a role. That the three-layer loop is worth
 protecting and should be recorded in the handoff notes.
 
 **The reporter's, established by inspection.** That
