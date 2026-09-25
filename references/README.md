@@ -23,10 +23,19 @@ source is drift, not a variant.
 |---|---|---|---|---|
 | `corpus-glossary.md` | 1.0 | 2026-09-25 | AI Methods / `search-project-corpus` | Vocabulary the pipeline uses: corpus, repository, tier, sidecar, index, manifest |
 | `repository-structure.md` | 2.1 | 2026-09-25 | AI Methods / `search-project-corpus` | The contract the pipeline owes the searcher, and the `_index.json` format both parse |
-| `project-manifest-format.md` | 1.0 | 2026-09-20 | AI Methods / `update-project-manifest` | Format of a real pipeline input, consumed by `claude_to_markdown.py` |
+| `project-manifest-format.md` | 1.1 | 2026-09-25 | AI Methods / `update-project-manifest` | Format of a real pipeline input, consumed by `claude_to_markdown.py` |
 
-`project-manifest-format.md` is known to be behind: v1.1 exists upstream and has
-not reached this repository.
+All three are current as of the dates above.
+
+One thing to know when reading `project-manifest-format.md`: **the document's
+version and the format's version are not the same number.** The document is at
+1.1; the format it describes is at 1.0. v1.1 changed only the framing — it
+stopped naming the digestion pipeline as the consumer and now presents it as one
+worked example — and the wire format did not change, so bumping
+`manifest_format_version` would have signalled a change that did not happen.
+
+The document's own *Versioning* section still says the two "move together",
+which is now inaccurate. Raised upstream.
 
 ## What is not here
 

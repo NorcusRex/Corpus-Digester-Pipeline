@@ -1,10 +1,13 @@
 # Project Manifest Format
 
-**Version 1.0**
+**Version 1.1**
 
 The format contract for a project manifest. Written by the
-`update-project-manifest` skill; read by the digestion pipeline, which uses it
-to group exported conversations by project.
+`update-project-manifest` skill and read by whatever consumes it.
+
+**One worked consumer, as an example.** A local digestion pipeline reads the
+manifest to group exported conversations into project folders. Nothing in the
+format assumes that consumer; any tool organizing an export can use it.
 
 This file is the contract, not the procedure. How a manifest is generated is in
 the skill; what a manifest must contain is here. Copy this file wherever a
