@@ -2,6 +2,18 @@
 
 Copies of documents this repository **reads but does not own**.
 
+## Three roles
+
+| Role | Who | Authority |
+|---|---|---|
+| **PM** | Nick | Rules on scope and priority; carries files between the other two |
+| **Designer** | the AI Methods conversation | Owns the shared reference files — requirements, vocabulary, contracts |
+| **Developer** | this repository | Owns the code and `pipeline-conventions.md` — mechanisms |
+
+Designer and Developer do not talk to each other. Every change crosses through
+PM as a file. That is why versions matter here: a file is the only channel, so a
+stale copy is an unnoticed disagreement.
+
 ## The rule
 
 **Never edit anything in this folder.** These are shared reference files. Their
@@ -24,6 +36,20 @@ source is drift, not a variant.
 | `corpus-glossary.md` | 1.0 | 2026-09-25 | AI Methods / `search-project-corpus` | Vocabulary the pipeline uses: corpus, repository, tier, sidecar, index, manifest |
 | `repository-structure.md` | 2.1 | 2026-09-25 | AI Methods / `search-project-corpus` | The contract the pipeline owes the searcher, and the `_index.json` format both parse |
 | `project-manifest-format.md` | 1.1 | 2026-09-25 | AI Methods / `update-project-manifest` | Format of a real pipeline input, consumed by `claude_to_markdown.py` |
+
+### Expected from the Designer
+
+Raised in `docs/handoffs/2026-09-25-1514__reference-file-ownership.md` and
+awaiting a new version:
+
+| File | Expected | For |
+|---|---|---|
+| `repository-structure.md` | v2.2 | The cut list — remove the four tiers, non-tier siblings and the corpus definition, all owned by the glossary |
+| `project-manifest-format.md` | v1.2 | Decouple the document version from `manifest_format_version` |
+| `corpus-glossary.md` | possibly | Only if the corpus three-versus-four contradiction is resolved by amending the glossary rather than by cutting v2.1's definition |
+
+Batching them is fine. None blocks the pipeline: all three are prose the code
+does not act on.
 
 All three are current as of the dates above.
 
