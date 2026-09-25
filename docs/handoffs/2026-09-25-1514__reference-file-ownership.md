@@ -118,10 +118,53 @@ rather than assuming it." That loop is the thing that keeps a requirement from
 quietly becoming false, and it is nearly complete — the cut list is mostly about
 stopping the top layer from duplicating the middle one.
 
-## Two smaller items
+## The versioning rule needs one more fix
 
-**`project-manifest-format.md` v1.1 has not reached the repository.** The copy
-here is v1.0. Send it and it will be swapped in.
+`project-manifest-format.md` v1.1 arrived and is installed. Its change is
+framing only — the document stopped naming the digestion pipeline as *the*
+consumer and now presents it as one worked example. Structure, fields, ordering
+and encoding are byte-identical to v1.0, and the pipeline needed no change.
+
+That revision quietly breaks the document's own rule, which is worth fixing
+before it causes a third round of confusion.
+
+The document is now **v1.1**. The format it describes is still **1.0**, and the
+example still reads `"manifest_format_version": "1.0"`. That is the right
+outcome: the wire format did not change, so bumping the field would have
+signalled a change that did not happen. But the *Versioning* section says:
+
+> The version in this document and the value of `manifest_format_version` move
+> together: this document at v1.0 describes `"manifest_format_version": "1.0"`.
+
+A v1.1 document describing format 1.0 is exactly what that rule says cannot
+exist.
+
+**The rule is what is wrong, and this revision is the proof.** Documents get
+revised for reasons that have nothing to do with the wire format — decoupling
+the manifest from its one named consumer improved the document and had no
+business touching the format. Coupling the two numbers means either the format
+version inflates for editorial changes, or the rule is broken every time the
+prose is improved. Both have now happened: the earlier confusion was a host
+skill's version stamped on the header, and this one is an editorial revision
+with nowhere to go.
+
+**Suggested fix.** Drop the "move together" sentence and state the mapping
+explicitly instead:
+
+> This document is version 1.1 and describes `manifest_format_version` **1.0**.
+> The two are independent: the document version changes whenever this file
+> changes, and the format version changes only when the JSON a consumer must
+> parse changes.
+
+That lets either move without lying about the other, and a reader can always
+tell which number is which. It is also the same principle the shared-file rule
+already establishes — a version describes the thing it is attached to, and
+nothing else.
+
+The distinction is recorded in the pipeline repository's `references/README.md`
+so a reader there is not misled by the stale rule inside the file itself.
+
+## One smaller item
 
 **The multi-word keyword requirement disappeared in the split.**
 `repository-structure.md` v1.11 said "Most keywords are multi-word". v2.1
