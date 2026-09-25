@@ -3,7 +3,7 @@ title: "Handoff — Reference File Ownership and the repository-structure Cut Li
 date: 2026-09-25T15:14-07:00
 source: "Claude Code session, Corpus-Digester-Pipeline repository"
 model: Claude Opus 5
-keywords: ["shared reference files", "canonical source", "repository-structure", "duplication", "requirements versus mechanisms"]
+keywords: ["shared reference files", "canonical source", "repository-structure", "duplication", "requirements versus mechanisms", "document versus format versioning"]
 ---
 
 # Handoff: Reference File Ownership and the `repository-structure` Cut List
@@ -12,12 +12,14 @@ keywords: ["shared reference files", "canonical source", "repository-structure",
 Middling compression, prose with tables. For the AI Methods conversation.
 
 **Abstract.** The conventions split is applied in the pipeline repository and
-the bundle's findings are reconciled against the code. Two things need doing on
-the design side. `repository-structure.md` v2.1 restates content that
+the bundle's findings are reconciled against the code. Three things need doing
+on the design side. `repository-structure.md` v2.1 restates content that
 `corpus-glossary.md` v1.0 owns — 51% of it by line count, measured — and in one
-place contradicts it. A cut list is proposed. Separately, the canonical source
-of the two shared files is confirmed as the claude.ai side, with the pipeline
-repository holding read-only copies.
+place contradicts it; a cut list is proposed. The manifest format's rule that a
+document's version and its wire-format version move together has been broken by
+an editorial revision, and the rule rather than the revision is what should
+change. And the canonical source of the two shared files is confirmed as the
+claude.ai side, with the pipeline repository holding read-only copies.
 
 ## Canonical source, confirmed
 
@@ -185,6 +187,11 @@ claude.ai side, both being design artifacts. That the `Owner` column should
 distinguish Chat/Design from Code authority. That the three-layer loop is worth
 protecting and should be recorded in the handoff notes.
 
+**The reporter's, established by inspection.** That
+`project-manifest-format.md` v1.1 changes framing only, from a line-by-line diff
+against v1.0, and that its *Versioning* rule is therefore broken by its own
+revision.
+
 **The reporter's, established by measurement.** The 51% duplication figure and
 the section-by-section breakdown, from comparing v2.1 against `corpus-glossary`
 v1.0 and `pipeline-conventions` v1.1. The corpus three-versus-four
@@ -193,7 +200,9 @@ settled the index format's ownership.
 
 **The reporter's, not ruled on** (user-acceptance tier 7 — Indeterminate). The
 cut list itself. The requirements-versus-mechanisms test as the way to decide
-future placements.
+future placements. The proposed replacement wording for the versioning rule.
+
+**Nick's instruction.** That the versioning rule fix be added to this note.
 
 ## Sources
 
