@@ -558,6 +558,51 @@ def build_corpus_doc_freq(md_files: list) -> tuple[dict, int]:
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
+# Utility exclusions
+# ---------------------------------------------------------------------------
+#
+# Not corpus content: tooling, editor state, generated listings, build output.
+# The distinction is by ROLE, not by naming pattern, though a leading
+# underscore or dot marks most of them.
+#
+# This list lives here because both the digester and the self-check need it and
+# they must agree. They did not: the self-check excluded these while the
+# digester did not, so a file under `_Tools/` was ignored by one and processed
+# by the other. Once unconvertible files started getting sidecars, that
+# divergence stopped being harmless -- `1-Raw/_Tools/foo.bat` produced a
+# `foo.bat.md` sidecar that the self-check then refused to look at.
+
+EXCLUDED_DIR_NAMES = frozenset({"_audit", "_Tools", "__pycache__", "node_modules"})
+EXCLUDED_FILE_NAMES = frozenset({"DIRTREE.txt", "FILETREE.txt", "tree.txt",
+                                 ".DS_Store", "Thumbs.db", "desktop.ini"})
+EXCLUDED_FILE_PREFIXES = ("~$",)      # Office lock files
+EXCLUDED_FILE_SUFFIXES = (".pyc", ".pyo")
+
+
+def is_utility_path(path, root) -> bool:
+    """True for a file that is tooling or clutter rather than corpus content.
+
+    `root` is the tree being walked, so only folders INSIDE it are considered:
+    a corpus whose own root is called `_Tools` is still digested.
+    """
+    from pathlib import Path as _P
+    path, root = _P(path), _P(root)
+    if path.name in EXCLUDED_FILE_NAMES:
+        return True
+    if path.name.startswith(EXCLUDED_FILE_PREFIXES):
+        return True
+    if path.name.lower().endswith(EXCLUDED_FILE_SUFFIXES):
+        return True
+    if path.name.startswith("."):
+        return True
+    try:
+        parts = path.relative_to(root).parts[:-1]
+    except ValueError:
+        return False
+    return any(p.startswith(".") or p in EXCLUDED_DIR_NAMES for p in parts)
+
+
+# ---------------------------------------------------------------------------
 # Extraction artifacts  (digester handoff v6.8, Decision 8)
 # ---------------------------------------------------------------------------
 #

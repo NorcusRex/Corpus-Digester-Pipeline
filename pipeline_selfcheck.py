@@ -94,23 +94,12 @@ MAX_PAIRS_DIFFED = 200
 # ---------------------------------------------------------------------------
 
 def is_excluded(path: Path, root: Path) -> bool:
-    """True for utility files and folders that are not corpus content."""
-    if path.name in EXCLUDED_FILE_NAMES:
-        return True
-    if path.name.startswith(EXCLUDED_FILE_PREFIXES):
-        return True
-    if path.name.endswith(EXCLUDED_FILE_SUFFIXES):
-        return True
-    if path.name.startswith("."):
-        return True
-    try:
-        rel_parts = path.relative_to(root).parts[:-1]
-    except ValueError:
-        return False
-    for part in rel_parts:
-        if part.startswith(".") or part in EXCLUDED_DIR_NAMES:
-            return True
-    return False
+    """True for utility files and folders that are not corpus content.
+
+    Delegates to add_metadata so the digester and this check cannot drift
+    apart. They did once, and sidecars turned that into visible noise.
+    """
+    return add_metadata.is_utility_path(path, root)
 
 
 def walk_content(root: Path) -> list[Path]:

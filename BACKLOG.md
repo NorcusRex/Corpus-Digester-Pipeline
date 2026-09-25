@@ -15,7 +15,7 @@ reasoning is worth being able to find.
 | 1 | Keyword soft tier — run the audit, then rule | Nick |
 | 2 | ChatGPT export media — run the inspection | Nick |
 | 3 | `3-Reporting` stamping — rule whether it is needed | Nick |
-| 4 | Reference documents contradict the code | Nick |
+| 4 | Two inconsistencies between the new reference files | Nick |
 | 5 | ChatGPT export media — build the fix | Item 2 |
 | — | Acceptance tiers 1–4 | Out of scope — the reporting skill's job |
 
@@ -92,41 +92,41 @@ pass at all. That is a question about your filing habits, not about the code.
 are catalogued by companion sidecars (`tier_sidecars.py`) which leave the
 artifact byte-identical.
 
-## 4. Reference documents contradict the code
+## 4. Two inconsistencies between the new reference files
 
-To take back to the source conversation. A message covering all of this was
-drafted and sent separately.
+**The sidecar half is resolved.** Both `corpus-glossary.md` v1.0 and
+`repository-structure.md` v2.1 now describe it correctly — the glossary says the
+pipeline "copies through or sidecars whatever it cannot convert", and v2.1 says
+files it cannot convert "appear as a small Markdown sidecar recording the
+original's name, type and source path". The message drafted for the source
+conversation on this point is no longer needed.
 
-**The sidecar ruling — still outstanding.** Re-checked against
-`repository-structure.md` v1.11 and `glossary.md` v1.2, both dated after the
-ruling. Neither has been updated. v1.11 still says under
-*Completeness of 2-Digested* that "the pipeline copies through every file it
-cannot convert", and the glossary's `2-Digested` entry still says "Complete
-with respect to `1-Raw`, because the pipeline copies through what it cannot
-convert". Under the sidecar ruling this is
-no longer accurate: `2-Digested` is a complete **catalog** of `1-Raw`, not a
-complete copy. Media and export auxiliaries are copied; everything else is
-represented by a sidecar. The search skill reads these files, so the wording
-matters.
+Two smaller things remain, both for whoever maintains the shared files.
 
-**Resolved, and no longer listed here.** The version-numbering question raised
-earlier is fixed: `project-manifest-format.md` now reads **Version 1.0**,
-matching the `manifest_format_version: "1.0"` in its own example, with its
-content otherwise unchanged. The repository's copy is updated.
+**The corpus is three places or four, depending which file you read.**
+`corpus-glossary.md` v1.0 says four — conversation, past conversations,
+**Evernote notes**, Drive repository — and declares itself the file that
+reconciles disagreements. `repository-structure.md` v2.1 says three in its
+*Vocabulary* section and again in *Project and corpus*, omitting Evernote. The
+glossary is presumably right, being newer on this point, but v2.1 shipped in
+the same bundle and contradicts it.
 
-The glossary has also gained a rule that prevents a recurrence, which is worth
-knowing because it changes how to read every version number in this system:
+Nothing in the pipeline depends on the answer: it converts `1-Raw` into
+`2-Digested` and never sees a conversation or a live source. It matters to the
+searcher.
 
-> **Shared reference file** — a reference file bundled in more than one skill,
-> or also used by the pipeline: `glossary.md`, `repository-structure.md`,
-> `project-manifest-format.md`. **A shared file carries its own version,
-> independent of every skill that bundles it.** Every copy of a shared file
-> must show the same version, and that version changes only when the file's
-> content does.
+**The multi-word keyword requirement vanished in the split.**
+`repository-structure.md` v1.11 said "Most keywords are multi-word". v2.1
+removes the whole Frontmatter section, and `pipeline-conventions.md` inherited
+only "a list of quoted strings". So the requirement now exists nowhere.
 
-That is exactly the failure that had the same glossary text reading 1.6, 2.3,
-4.4 and 4.6 at once. Under the new rule a shared file's version is its own, so
-the glossary's current number — **1.2** — is the glossary's, not any skill's.
+The pipeline emits single words, so this closes the gap — but by accident of
+the split rather than by decision. If multi-word keywords were wanted, the
+requirement belongs in `pipeline-conventions.md`, and the work is real: n-gram
+candidates that do not cross punctuation, rejecting ones bounded by stopwords,
+scored alongside unigrams, then dropping single words a chosen phrase covers.
+TF-IDF handles n-grams unchanged, and the lexicon already accepts multi-word
+entries.
 
 ---
 

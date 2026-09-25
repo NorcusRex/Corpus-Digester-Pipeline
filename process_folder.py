@@ -386,13 +386,13 @@ def process_file(src: Path, src_root: Path, out_root: Path,
 
     rel_parent = src.parent.relative_to(src_root)
 
-    # Editor and tool configuration lives in dot-folders (.obsidian/ and the
-    # like). Skipping a file whose OWN name starts with a dot is not enough --
-    # .obsidian/app.json has an ordinary filename. Prune the whole subtree
-    # whenever any ancestor folder inside the source tree starts with a dot.
-    if any(part.startswith(".") for part in rel_parent.parts):
-        stats["skipped_dot_folder"] += 1
-        return "skipped (dot folder)"
+    # Tooling, editor state, generated listings and build output are not corpus
+    # content. The list is shared with the self-check so the two agree; when
+    # they did not, a file under `_Tools/` was ignored by one and given a
+    # sidecar by the other.
+    if add_metadata.is_utility_path(src, src_root):
+        stats["skipped_utility"] += 1
+        return "skipped (utility)"
 
     out_dir = out_root / rel_parent
     suffix = src.suffix.lower()
@@ -805,7 +805,7 @@ def main() -> int:
     print(f"  chatgpt content    : {stats['chatgpt_content']}")
     print(f"  sidecars written   : {stats['sidecar']}")
     print(f"  lock/hidden skipped: {stats['skipped_lock_or_hidden']}")
-    print(f"  dot-folder skipped : {stats['skipped_dot_folder']}")
+    print(f"  utility skipped    : {stats['skipped_utility']}")
     if stats['skipped_no_pypdf']:
         print(f"  pdf skipped (deps) : {stats['skipped_no_pypdf']}")
     print(f"  errors             : {stats['errors']}")

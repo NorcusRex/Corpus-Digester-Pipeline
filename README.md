@@ -114,11 +114,15 @@ for supplying word lists and project glossaries that protect real terms.
 
 | File | Covers |
 |---|---|
+| [`pipeline-conventions.md`](pipeline-conventions.md) | **What this pipeline writes.** Filenames, frontmatter, sidecars, skip list, completeness |
 | [`docs/quickstart.md`](docs/quickstart.md) | Running the batch files |
 | [`docs/pipeline-guide.md`](docs/pipeline-guide.md) | Full reference, including named pipeline inputs |
 | [`docs/brief-part-1-pipeline-and-libraries.md`](docs/brief-part-1-pipeline-and-libraries.md) | Design history: the pipeline and libraries |
 | [`docs/brief-part-2-conversation-research-project.md`](docs/brief-part-2-conversation-research-project.md) | Design history: conversation research |
+| [`references/corpus-glossary.md`](references/corpus-glossary.md) | Shared vocabulary: corpus, repository, tier, sidecar, index |
+| [`references/repository-structure.md`](references/repository-structure.md) | What a searcher finds — the contract this pipeline must satisfy |
 | [`references/project-manifest-format.md`](references/project-manifest-format.md) | Format contract for the project manifest |
+| [`docs/conventions-split-handoff.md`](docs/conventions-split-handoff.md) | Why conventions live in three documents with three owners |
 | [`lexicon/README.md`](lexicon/README.md) | Word lists and glossaries |
 | [`BACKLOG.md`](BACKLOG.md) | Agreed but unbuilt, and what waits on a ruling |
 
