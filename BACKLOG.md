@@ -97,30 +97,36 @@ artifact byte-identical.
 To take back to the source conversation. A message covering all of this was
 drafted and sent separately.
 
-**The sidecar ruling.** `repository-structure.md` v1.10 still says under
+**The sidecar ruling — still outstanding.** Re-checked against
+`repository-structure.md` v1.11 and `glossary.md` v1.2, both dated after the
+ruling. Neither has been updated. v1.11 still says under
 *Completeness of 2-Digested* that "the pipeline copies through every file it
-cannot convert". The glossary says the same. Under the sidecar ruling this is
+cannot convert", and the glossary's `2-Digested` entry still says "Complete
+with respect to `1-Raw`, because the pipeline copies through what it cannot
+convert". Under the sidecar ruling this is
 no longer accurate: `2-Digested` is a complete **catalog** of `1-Raw`, not a
 complete copy. Media and export auxiliaries are copied; everything else is
 represented by a sidecar. The search skill reads these files, so the wording
 matters.
 
-**A version-numbering question**, for whoever maintains the reference files.
-`project-manifest-format.md` is headed **Version 2.3** but its example manifest
-carries `"manifest_format_version": "1.0"`, while its *Versioning* section says
-the two numbers move together. Three claims that cannot all hold.
+**Resolved, and no longer listed here.** The version-numbering question raised
+earlier is fixed: `project-manifest-format.md` now reads **Version 1.0**,
+matching the `manifest_format_version: "1.0"` in its own example, with its
+content otherwise unchanged. The repository's copy is updated.
 
-The likely explanation is that the header number is a **bundle** version,
-stamped across every reference file at once, rather than a version of that
-document. The evidence is strong: the same glossary text now carries **1.6** in
-the copy given to this session, **2.3** in the `update-project-manifest` skill
-bundle, and **4.4** in the `write-report` skill bundle, the files being
-otherwise identical line for line.
+The glossary has also gained a rule that prevents a recurrence, which is worth
+knowing because it changes how to read every version number in this system:
 
-If that reading is right, the manifest format really is at 1.0, the example is
-correct, and the sentence claiming the two versions track each other is the
-error. Nothing for this pipeline either way — it ignores the field — but anyone
-writing a validator would not know which number to expect.
+> **Shared reference file** — a reference file bundled in more than one skill,
+> or also used by the pipeline: `glossary.md`, `repository-structure.md`,
+> `project-manifest-format.md`. **A shared file carries its own version,
+> independent of every skill that bundles it.** Every copy of a shared file
+> must show the same version, and that version changes only when the file's
+> content does.
+
+That is exactly the failure that had the same glossary text reading 1.6, 2.3,
+4.4 and 4.6 at once. Under the new rule a shared file's version is its own, so
+the glossary's current number — **1.2** — is the glossary's, not any skill's.
 
 ---
 

@@ -1,6 +1,6 @@
 # Project Manifest Format
 
-**Version 2.3**
+**Version 1.0**
 
 The format contract for a project manifest. Written by the
 `update-project-manifest` skill; read by the digestion pipeline, which uses it
