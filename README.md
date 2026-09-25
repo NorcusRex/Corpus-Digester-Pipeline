@@ -119,10 +119,12 @@ for supplying word lists and project glossaries that protect real terms.
 | [`docs/pipeline-guide.md`](docs/pipeline-guide.md) | Full reference, including named pipeline inputs |
 | [`docs/brief-part-1-pipeline-and-libraries.md`](docs/brief-part-1-pipeline-and-libraries.md) | Design history: the pipeline and libraries |
 | [`docs/brief-part-2-conversation-research-project.md`](docs/brief-part-2-conversation-research-project.md) | Design history: conversation research |
+| [`references/README.md`](references/README.md) | Canonical source of the shared files, and who owns which fact |
 | [`references/corpus-glossary.md`](references/corpus-glossary.md) | Shared vocabulary: corpus, repository, tier, sidecar, index |
 | [`references/repository-structure.md`](references/repository-structure.md) | What a searcher finds — the contract this pipeline must satisfy |
 | [`references/project-manifest-format.md`](references/project-manifest-format.md) | Format contract for the project manifest |
 | [`docs/conventions-split-handoff.md`](docs/conventions-split-handoff.md) | Why conventions live in three documents with three owners |
+| [`docs/handoffs/`](docs/handoffs/) | Notes written for the AI Methods conversation |
 | [`lexicon/README.md`](lexicon/README.md) | Word lists and glossaries |
 | [`BACKLOG.md`](BACKLOG.md) | Agreed but unbuilt, and what waits on a ruling |
 

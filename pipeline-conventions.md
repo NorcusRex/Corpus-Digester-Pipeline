@@ -208,15 +208,20 @@ supplies the root for `source_path`, defaulting to the input tier's parent.
 
 ## The index
 
-`_index.json` in `2-Digested`, listing **Markdown files only** — including
-sidecars, which are Markdown. Media carried through is not indexed; it is
-reached through the file that references it.
+**The index format is specified in `references/repository-structure.md`, not
+here.** The searcher parses `_index.json` — it reads the index before anything
+else — so the format is an interface between two parties, and it lives in the
+shared document both of them hold. Restating it here would give one fact two
+homes and let them drift.
 
-Top-level `generated_at`, `output_root`, `file_count`, `stats`, `files[]`. Each
-entry carries `path`, `size_bytes`, and `frontmatter`. **No Drive file IDs** —
-the index is written before the push, and IDs are not durable.
+What belongs here is what the pipeline decides about its own output:
 
-`_manifest.json` is the legacy name for the same file and is still read.
+- Written to `2-Digested` on every non-dry run, after the metadata pass
+- Lists **Markdown files only**, including sidecars, which are Markdown
+- Media carried through is not indexed; it is reached through the file that
+  references it
+- `.nlm.md` files are excluded — they are derivative
+- `_manifest.json`, written by older versions, is still read under that name
 
 ## Completeness
 
