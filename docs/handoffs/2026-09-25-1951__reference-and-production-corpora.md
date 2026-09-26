@@ -2,7 +2,7 @@
 title: Reference and Production Corpora — the federation decision and what it asks of the searcher
 date: 2026-09-25T19:51-07:00
 source: "Claude Code conversation, Corpus-Digester-Pipeline repository"
-keywords: ["Reference corpus", "Production corpus", "corpus kind", "search-project-corpus", "search-google-drive", "two-part and four-part corpora", "per-corpus search", "corpus-labelled results", "provenance boundary"]
+keywords: ["Reference corpus", "Production corpus", "corpus kind", "primary and secondary corpora", "search-project-corpus", "search-google-drive", "two-part and four-part corpora", "distinct result sets", "provenance boundary"]
 ---
 
 # Reference and Production Corpora — the federation decision and what it asks of the searcher
@@ -18,19 +18,19 @@ corpus**, which is the home of a project and carries all four tiers, and a
 project produces into it. Three consequences land on the Designer. First,
 `search-project-corpus` must handle both shapes, so `repository-structure.md`'s
 instruction to verify a root by checking for four tiers has to become
-conditional on corpus kind. Second, searching several corpora carries two
-specific failure modes, and avoiding them is a requirement rather than an
-implementation detail: search each corpus separately and exhaustively, label
-every result with the corpus it came from, and never pool into a single global
-ranking. Third, Nick wants a second, general skill — provisionally
+conditional on corpus kind. Second, a search across several corpora returns **several
+distinct result sets, never one**: each corpus is searched separately and
+exhaustively, results are reported per corpus — *"I looked here and found this;
+I looked there and found that"* — and whether to merge them is the user's
+decision, not the assistant's. Third, Nick wants a second, general skill — provisionally
 `search-google-drive` — for Drive trees that are not corpora at all. The
 pipeline side needs no change to support any of this; the mechanism that
 distributes or withholds material already exists and is already configured per
 corpus.
 
-**Keywords:** Reference corpus · Production corpus · corpus kind ·
-`search-project-corpus` · `search-google-drive` · two-part and four-part
-corpora · per-corpus search · corpus-labelled results · provenance boundary
+**Keywords:** Reference corpus · Production corpus · corpus kind · primary and
+secondary corpora · `search-project-corpus` · `search-google-drive` ·
+two-part and four-part corpora · distinct result sets · provenance boundary
 
 *Moderate compression, prose with tables where a comparison is the point. Draft
 one: reasoning is kept, and a short editorial note at the foot says what was
@@ -186,16 +186,44 @@ merging ranked lists by score is not a ranking, it is noise with an ordering.
 This is the same corpus-relativity that appears in the argument above, seen from
 the other side.
 
-The requirement Nick accepted, verbatim as put to him:
+**The rule, in Nick's own form.** The Code side proposed "search each corpus
+separately and exhaustively, label every result with the corpus it came from,
+and don't pool into a single global ranking." Nick accepted that and then went
+further, and his version is the one that governs:
 
-> Search each corpus separately and exhaustively, label every result with the
-> corpus it came from, and don't pool into a single global ranking.
+> When a primary and secondary corpora are searched, it seems like they should
+> be treated as entirely distinct. "I looked here and found this; I looked
+> there and found that". How to merge their results, if desired, should be a
+> decision for the user, not the assistant.
 
-Stating it as a requirement rather than as advice is deliberate. It is exactly
-the kind of constraint that gets optimised away later by someone reasonably
-trying to make the skill faster or tidier, and the thing it protects — the
-provenance boundary federation was chosen for — is not visible in the code that
-would remove it.
+The difference matters. The Code side's version forbids one specific bad
+behaviour — a pooled ranking — and leaves the assistant free to combine results
+in other ways. Nick's version withholds the merge decision from the assistant
+altogether. A search returns several result sets and says where each came from;
+the reader decides what to do with them, and the skill does not decide on their
+behalf.
+
+That also disposes of the presentation question. Under the weaker rule the
+skill still has to choose how to interleave and display results; under Nick's,
+there is nothing to interleave, because the sets stay separate all the way to
+the reader.
+
+Stating this as a requirement rather than as advice is deliberate. It is
+exactly the kind of constraint that gets optimised away later by someone
+reasonably trying to make the skill faster or tidier, and the thing it
+protects — the provenance boundary federation was chosen for — is not visible in
+the code that would remove it.
+
+**A second axis, in Nick's words.** He speaks of *primary* and *secondary*
+corpora, which is not the same distinction as Production and Reference.
+Production versus Reference is a fact about a corpus's structure and whether a
+project produces into it. Primary versus secondary is a fact about a particular
+agent's relationship to it in a particular search. They are independent: a
+Production corpus owned by one project can be a secondary corpus for another
+project's agent. Worth naming explicitly in the shared files, because
+collapsing the two axes would make "Reference" mean "secondary" and quietly
+rule out the case Nick started from — Loom reaching into `RPG Theory`, which
+may itself become Production later.
 
 This also interacts with a change the Designer made this week on their own
 initiative: `search-project-corpus` now reports the exact queries it used,
@@ -308,12 +336,11 @@ checking that `1-Raw` and `2-Digested` sit beneath it, and that a Production
 corpus additionally carries `3-Reporting` and `4-Canon`" would preserve the
 purpose with a smaller edit than introducing a kind system might imply.
 
-**One thing to watch in the skill.** The requirement not to pool results into a
-global ranking is easy to state and easy to violate accidentally, because the
-natural way to present N result sets is to interleave them by apparent
-relevance. Presenting them grouped by corpus, in the configured priority order,
-is what actually implements the rule. That is a presentation decision as much as
-a retrieval one.
+**The strengthened rule is also easier to implement than the weaker one.** A
+rule against pooling still requires judgment at presentation time — how to
+interleave, in what order, under what budget. A rule that the result sets stay
+distinct removes the judgment: report each search as its own answer. Where the
+weaker rule needed care to obey, this one is obeyed by doing less.
 
 ## Provenance
 
@@ -335,6 +362,13 @@ works; that a search over a larger domain should be slower but not less
 effective; and that digesting the `RPG` library is future work involving OCR and
 tremendous effort. The framing quoted in *How this came up* is his, verbatim.
 
+Also tier 0, and added after the first draft: that a primary and a secondary
+corpus are treated as **entirely distinct** in a search, and that merging their
+results is the user's decision rather than the assistant's. Quoted in full
+under *What this requires of the searcher*. The terms *primary* and *secondary*
+are his; the observation that they form an axis independent of
+Production/Reference is the reporter's.
+
 **Nick accepted this** (user-acceptance tier 1 — Explicitly Accepted, clear
 referent): the search requirement — per-corpus exhaustive search, corpus-labelled
 results, no global ranking — together with the provenance-boundary rationale
@@ -342,10 +376,26 @@ stated in the same passage, which he quoted before answering "Agreed!". Also the
 configuration model, "a project agent is configured with one working corpus and
 zero or more reference corpora", which he quoted and answered "Good idea!".
 
-That acceptance carries a **bifurcation**. Nick accepted the configuration model
-and then renamed its terms, so the accepted form is *one Production corpus and
-zero or more Reference corpora*; the Code side's "working corpus" is superseded
-and attributed to the assistant, not to Nick.
+**Two bifurcations, both recorded rather than merged into the accepted form.**
+
+Nick accepted the configuration model and then renamed its terms, so the
+accepted form is *one Production corpus and zero or more Reference corpora*;
+the Code side's "working corpus" is superseded and attributed to the assistant,
+not to Nick.
+
+Nick accepted the search requirement and then strengthened it. The Code side's
+version forbade pooling into a global ranking; Nick's requires the corpora be
+treated as entirely distinct and withholds the merge decision from the
+assistant. The Code side's version is superseded — it permits combinations
+Nick's does not — and the governing form is his, tier 0. Both are printed in
+the body, because the difference between them is the substance of the ruling.
+
+**Nick's own characterisation of what he accepted**, given when this draft was
+reviewed: *"I think your proposals are fine. I did accept the general idea,
+although perhaps not all the details."* That confirms the tiering below rather
+than changing it — the general conclusions are accepted, the individual
+supporting arguments are not, and the items marked indeterminate should stay
+marked.
 
 **Nick objected to this, and it was resolved in his favour** (user-acceptance
 tier 3 — Contested, clear referent): the Code side's claim that read/write access
@@ -389,6 +439,12 @@ time, inferred from the `-07:00` offsets in the manifest format and from the
 timestamp on the previous handoff note. If that inference is wrong the filename
 and `date` field are wrong with it, and renaming is harmless.
 
+**Revision.** This is draft one, revised in place after Nick reviewed it. The
+revision strengthened the search rule to his form, added the primary/secondary
+axis, and replaced the third reporter's observation, which the strengthened
+rule made moot. Nothing was removed on the grounds of being wrong; the
+superseded Code-side formulation is retained and marked.
+
 **Substantive omission.** No corpus search was performed for this report and
 none of Nick's past conversations were consulted. It is an account of one
 conversation, and a position he took elsewhere could contradict it without this
@@ -402,7 +458,9 @@ report knowing.
   "Bear with me as we take another step up to a higher altitude" through
   "A search over a larger domain should be slower, but not less effective."
 - Accessed: 2026-09-25
-- Note: all rulings and quotations above are from this conversation
+- Note: all rulings and quotations above are from this conversation, including
+  the review exchange after draft one, which supplied the governing form of the
+  search rule
 
 ### S2 — File: `sync_subset.py`
 - Type: repository source file
