@@ -71,6 +71,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 import add_metadata  # noqa: E402
+import run_log  # noqa: E402
 
 REQUIRED_FIELDS = ("title", "keywords", "date", "source")
 
@@ -129,6 +130,8 @@ def main() -> int:
                     help="Keyword count (default: scale by document length)")
     ap.add_argument("--dry-run", action="store_true",
                     help="Report what would be stamped, change nothing")
+    ap.add_argument("--log", default=None,
+                    help="Mirror this run's output to a log file. The console\n                         is unchanged; the log is what survives the window\n                         closing.")
     args = ap.parse_args()
 
     tier_root = Path(args.tier).expanduser()
@@ -202,4 +205,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # The tee goes up before argparse runs, so a usage error is
+    # logged too rather than vanishing with the console.
+    with run_log.tee_stdio(run_log.log_path_from_argv(sys.argv),
+                           header="Tier stamping pass"):
+        raise SystemExit(main())

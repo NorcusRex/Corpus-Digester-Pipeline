@@ -67,6 +67,8 @@ calls everything in order. Copy `corpus_wrapper.template.bat` into a corpus's
 | `tier_sidecars.py` | Catalogues an authored tier without modifying it |
 | `stamp_tier.py` | Fills in missing frontmatter on an authored tier's Markdown |
 | `ocr_pdf.py` | Recovers text from scanned PDFs into a content-hashed cache |
+| `drive_collisions.py` | Reports `.xlsx` / Google Sheet collisions that block an rclone push |
+| `run_log.py` | Shared output-to-log mirroring, used by the passes above |
 | `sync_subset.py` | Mirrors a selected subset of digested conversations |
 | `subset_inventory.py` | Reports what a digested archive offers for selection, and what nothing selects |
 | `split_export.py` | Splits an AI export into per-project exports before any conversion |

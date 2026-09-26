@@ -14,8 +14,10 @@ reasoning is worth being able to find.
 |---|---|---|
 | 1 | Test the branch, then merge PR #1 to `main` | Nick |
 | 2 | Read the rejected-keyword report after the first digest | Nick |
-| 3 | Multi-word keywords | Nick and Claude, after the first digest |
+| 3 | Review the Drive collision report, then delete the Sheets | Nick |
 | 4 | Choose which books go in the RPG search library | Nick |
+| 5 | Does `3-Reporting` belong in the GitHub canon repo? | Nick; never answered |
+| 6 | Multi-word keywords | Nick and Claude, after the first digest |
 | — | Acceptance tiers 1–4 | Out of scope — the reporting skill's job |
 
 ---
@@ -89,39 +91,32 @@ dictionary was "earning its place" was made about the vowel-ratio version and
 was not revisited after that version was replaced; it was also circular, since
 the dictionary passed to that test was built from the test's own answer key.
 
-# Joint
+## 3. Review the Drive collision report, then delete the Sheets
 
-## 3. Multi-word keywords
+**Blocks the first Loom push**, which is step 3 of the plan. `.xlsx` files
+colliding with same-named native Google Sheets make rclone fail:
+`can't update google document type without --drive-import-formats`. Adding
+that flag does not fix it — it converts the local `.xlsx` into a Sheets
+update and silently discards Excel-only features. It was tried and rolled
+back once already.
 
-**Ruled in by Nick. Nick and Claude together, after the first digest.**
+```
+python drive_collisions.py drive:RPG/_Design/Loom --local I:\RPG\_Design\Loom --report collisions.md
+```
 
-Joint for two reasons rather than one. The scope needs a ruling only real
-output can inform — how aggressive to be about phrases — and the tuning needs
-the same corpus statistics the soft-tier audit needs. Both follow the first
-digest for the same reason: there is nothing to judge until there is output
-to judge.
+Read `collisions.md`, delete the Sheets it lists as safe. The rule is yours
+and the script does not deviate from it: the Sheet goes only where the
+`.xlsx` is newer than or equal to it. Where the Sheet is newer, someone
+edited it in Drive and those edits are not in the local file.
 
-The requirement existed in `repository-structure.md` v1.11 — "Most keywords are
-multi-word" — and vanished when the conventions were split: v2.1 removed the
-Frontmatter section and `pipeline-conventions.md` inherited only "a list of
-quoted strings". The pipeline emits single words, so nothing is currently
-violating a rule; the rule had simply stopped existing. The Designer accepted
-the finding and left it out of 2.3 deliberately. When it is picked up, the
-requirement belongs in `pipeline-conventions.md`, which the pipeline owns.
+The script never deletes. The match is a heuristic on filenames and the
+thing being deleted is the only copy of any Sheets-side edit, so it reports
+and you decide.
 
-**Scope.** Generate n-gram candidates that do not cross punctuation, reject ones
-bounded by stopwords, and score them alongside unigrams. TF-IDF handles n-grams
-unchanged, and the lexicon already accepts multi-word entries.
-
-**One step of the original sketch is wrong, corrected by the Designer.** It
-proposed dropping single words that a chosen phrase covers. That discards
-evidence: a word occurring fifty times, ten of them inside a phrase, has earned
-its own entry on the other forty. Score phrases and single words independently
-and keep both where both earn a place.
-
-**What it is worth.** Better browsing. It would not have prevented the retrieval
-failure that started this — that was conjunctive queries and searching in the
-wrong vocabulary, both on the searcher's side.
+It also lists separately any Sheet whose *title* ends in `.xlsx`. A hand-made
+conversion is titled without the extension, so those are most likely debris
+from the `--drive-import-formats` run rather than anything deliberate — the
+distinction the inherited note could not make.
 
 ## 4. Choose which books go in the RPG search library
 
@@ -154,6 +149,53 @@ known fault, and one only a real `ocrmypdf` can answer.
 
 **What remains here is yours, not the code's:** choosing which books go in
 `1-Raw`.
+
+## 5. Does `3-Reporting` belong in the GitHub canon repo?
+
+**Never answered.** Inherited from the pipeline's first conversation, where
+it is recorded as Indeterminate: the plan is a GitHub repository for
+`4-Canon`, you raised including `3-Reporting`, that chat argued against it on
+the grounds that pipeline-generated content makes noisy commits, and you did
+not respond either way.
+
+Surfacing it rather than letting the non-answer harden into a decision.
+Nothing depends on it yet.
+
+---
+
+# Joint
+
+## 6. Multi-word keywords
+
+**Ruled in by Nick. Nick and Claude together, after the first digest.**
+
+Joint for two reasons rather than one. The scope needs a ruling only real
+output can inform — how aggressive to be about phrases — and the tuning needs
+the same corpus statistics the soft-tier audit needs. Both follow the first
+digest for the same reason: there is nothing to judge until there is output
+to judge.
+
+The requirement existed in `repository-structure.md` v1.11 — "Most keywords are
+multi-word" — and vanished when the conventions were split: v2.1 removed the
+Frontmatter section and `pipeline-conventions.md` inherited only "a list of
+quoted strings". The pipeline emits single words, so nothing is currently
+violating a rule; the rule had simply stopped existing. The Designer accepted
+the finding and left it out of 2.3 deliberately. When it is picked up, the
+requirement belongs in `pipeline-conventions.md`, which the pipeline owns.
+
+**Scope.** Generate n-gram candidates that do not cross punctuation, reject ones
+bounded by stopwords, and score them alongside unigrams. TF-IDF handles n-grams
+unchanged, and the lexicon already accepts multi-word entries.
+
+**One step of the original sketch is wrong, corrected by the Designer.** It
+proposed dropping single words that a chosen phrase covers. That discards
+evidence: a word occurring fifty times, ten of them inside a phrase, has earned
+its own entry on the other forty. Score phrases and single words independently
+and keep both where both earn a place.
+
+**What it is worth.** Better browsing. It would not have prevented the retrieval
+failure that started this — that was conjunctive queries and searching in the
+wrong vocabulary, both on the searcher's side.
 
 ---
 

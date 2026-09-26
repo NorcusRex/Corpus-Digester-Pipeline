@@ -167,6 +167,10 @@ When the pipeline reports errors, the log file is the first place to look. Open 
 
 To skip log writing entirely, pass `--no-log`. To direct the log to a separate folder (useful if you want to keep run history outside the digested archive), pass `--log-dir` "C:\path\to\logs".
 
+Every other pass takes `--log FILE` and mirrors its output there as well as to the console: `clean_stale.py`, `stamp_tier.py`, `tier_sidecars.py` and `drive_collisions.py`. The mechanism is shared in `run_log.py` rather than copied into each. The log opens *before* the arguments are parsed, so a usage error is captured too — the runs most worth having a record of are the ones that fail at the front door.
+
+`pipeline_selfcheck.py` uses `--report` instead, because its output is a document rather than a running commentary.
+
 ## CORPUS INDEX  (formerly "manifest")
 
 Every run also writes a `_index.json` file at the root of your OUTPUT_DIR. (Prior runs named this `_manifest.json`; that legacy name means the SAME file and stays valid until a re-digest replaces it. The rename ends a naming collision: this content index is NOT the Claude-export PROJECT-GROUPING manifest, which is a separate `<PROJECT_UUID>_manifest.json` file used only to group conversations by project.) It contains:
@@ -938,6 +942,37 @@ This generic-engine / site-launcher / site-data split is the same separation the
 `sync_gdrive_corpus.bat` is the generic launcher. It takes a selection list, one source export tree and one destination, so a corpus drawing on both Claude and ChatGPT calls it twice — which is what the per-corpus wrapper does, mirroring into FromNick\Notes\AI\Claude\Conversations\Exported\ and FromNick\Notes\AI\ChatGPT\Conversations\Exported\ respectively. The "Exported" subfolder distinguishes auto-mirrored files from hand-curated sibling folders (Copied\, Output\).
 
 It auto-discovers the newest dated export folder under the source root by filesystem date (NOT by name -- the export folder names are not zero-padded, so a name sort would be wrong), and echoes the resolved paths at the top of each run so you can confirm it picked the right export. Flags (`--prune`, `--dry-run`, `--verbose`) pass through to sync_subset.py. To add another export source, add another call; nothing in the script changes.
+
+## DRIVE COLLISIONS (drive_collisions.py)
+
+Opening an `.xlsx` in Drive with "Open with Google Sheets" leaves a native Sheet beside it. rclone then sees two objects with what it considers the same name in one folder, tries to update the Sheet from the local `.xlsx`, and stops:
+
+```
+ERROR : ....xlsx: Failed to copy: can't update google document type
+        without --drive-import-formats
+```
+
+**Do not add that flag.** It does not resolve the collision — it converts the local `.xlsx` into a Sheets update and silently discards Excel-only features. It was tried once on this corpus and rolled back for that reason.
+
+```
+python drive_collisions.py drive:RPG/_Design/Loom --report collisions.md
+python drive_collisions.py drive:RPG/_Design/Loom --local I:\RPG\_Design\Loom --report collisions.md
+```
+
+If rclone is not to hand, or its flags differ by version, produce the listing yourself and feed it in:
+
+```
+rclone lsjson -R --drive-show-all-gdocs drive:RPG/_Design/Loom > listing.json
+python drive_collisions.py --json listing.json --report collisions.md
+```
+
+**The rule it applies is yours, unchanged:** delete the Sheet only where the `.xlsx` is newer than or equal to it. Where the Sheet is newer, someone edited it in Drive and those edits are not in the local file, so it is reported as one to keep.
+
+**It never deletes.** The output is a review list carrying Drive file IDs, and the deletions are yours to make. That is not caution for its own sake: the match is a heuristic on filenames, and the thing being deleted is the only copy of any edit made in Sheets. A tool that guessed and deleted would be wrong rarely and expensively.
+
+**`--local` is the comparison you usually want.** It measures the Sheet against the local `.xlsx` rather than against its Drive copy, which is right given that local is authoritative and Drive is the mirror. Where the local file is missing it falls back to the Drive copy and says so in the report.
+
+**Sheets titled `Something.xlsx` are listed separately.** A conversion made by hand is titled without the extension. One carrying it has the shape an rclone import leaves behind, so it is most likely debris from the `--drive-import-formats` run rather than anything made deliberately. Testable, rather than a guess about intent.
 
 ## GOOGLE SHEETS
 

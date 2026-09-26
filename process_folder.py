@@ -55,6 +55,7 @@ import xlsx_to_markdown        # noqa: E402
 import chatgpt_to_markdown     # noqa: E402
 import chatgpt_assets          # noqa: E402
 import ocr_pdf                 # noqa: E402
+import run_log                 # noqa: E402
 import claude_to_markdown      # noqa: E402
 import rtf_to_markdown         # noqa: E402
 import html_to_markdown        # noqa: E402
@@ -188,31 +189,8 @@ def _is_inside(path: Path, roots: set[Path]) -> bool:
 # Console + log file tee
 # ---------------------------------------------------------------------------
 
-class _Tee:
-    """Forward writes to multiple streams. Used to mirror stdout/stderr to
-    both the console and a timestamped log file."""
-
-    def __init__(self, *streams):
-        self.streams = streams
-
-    def write(self, data: str) -> int:
-        for s in self.streams:
-            try:
-                s.write(data)
-                s.flush()
-            except Exception:  # noqa: BLE001
-                pass
-        return len(data)
-
-    def flush(self) -> None:
-        for s in self.streams:
-            try:
-                s.flush()
-            except Exception:  # noqa: BLE001
-                pass
-
-    def isatty(self) -> bool:
-        return False
+# The tee lives in run_log.py, shared with the other passes.
+_Tee = run_log.Tee
 
 
 # ---------------------------------------------------------------------------

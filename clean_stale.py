@@ -98,6 +98,11 @@ import re
 import sys
 from pathlib import Path
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+
+import run_log  # noqa: E402
+
 
 FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n?", re.DOTALL)
 
@@ -403,6 +408,8 @@ def main() -> int:
                     help="Skip the confirmation prompt when deleting")
     ap.add_argument("--verbose", action="store_true",
                     help="Print every file's classification, not just stale ones")
+    ap.add_argument("--log", default=None,
+                    help="Mirror this run's output to a log file. The console\n                         is unchanged; the log is what survives the window\n                         closing.")
     args = ap.parse_args()
 
     raw_dir = Path(args.raw_dir)
@@ -585,4 +592,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # The tee goes up before argparse runs, so a usage error is
+    # logged too rather than vanishing with the console.
+    with run_log.tee_stdio(run_log.log_path_from_argv(sys.argv),
+                           header="Stale-file check"):
+        raise SystemExit(main())
