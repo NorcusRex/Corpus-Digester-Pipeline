@@ -12,18 +12,16 @@ reasoning is worth being able to find.
 
 | # | Item | Blocked on |
 |---|---|---|
-| 1 | Keyword soft tier — run the audit, then rule | Nick |
-| 2 | `3-Reporting` stamping — rule whether it is needed | Nick |
-| 3 | Carry the corpora report to AI Methods | Nick |
-| 4 | Multi-word keywords — PM has ruled it in | Nobody; unscheduled |
-| 5 | Index or digest the `RPG` library | Nobody; someday |
+| 1 | Read the rejected-keyword report after the first digest | Nick |
+| 2 | Multi-word keywords — PM has ruled it in | Nobody; unscheduled |
+| 3 | Index or digest the `RPG` library | Nobody; someday |
 | — | Acceptance tiers 1–4 | Out of scope — the reporting skill's job |
 
 ---
 
 # Waiting on Nick
 
-## 1. Does the keyword filter's soft tier survive contact with the corpus?
+## 1. Read the rejected-keyword report after the first digest
 
 **The one to do first.** It is the only open item where the current code could
 be quietly doing damage — throwing away real words — and the audit that settles
@@ -46,9 +44,13 @@ The soft tier needs judging for two reasons. It is the tier that can throw away
 a real word. And it is the tier doing the work: of the four artifacts the
 handoff names, the hard tests catch two and the soft tests catch the other two.
 
-**How to settle it.** Run a digest with `--report-artifacts rejected.md`, or the
-wrapper's `--audit`. Read the *Soft rejections* table. Anything real in it is a
-false positive, and the answer is either a lexicon entry or dropping the tier.
+**How to settle it.** The report is now written on every run — `AUDIT=1` is the
+wrapper's default, because it costs nothing (it records what the metadata pass
+already decided) and because forgetting the flag was the only thing standing
+between this and an answer. Open `_rejected-keywords.md` at the corpus root
+after your first Loom digest and read the *Soft rejections* table. Anything
+real in it is a false positive, and the answer is either a lexicon entry or
+dropping the tier.
 
 **Why synthetic testing is not enough.** Two false-positive bugs were found and
 fixed during implementation, both invisible to the fixtures that were passing at
@@ -67,55 +69,12 @@ dictionary was "earning its place" was made about the vowel-ratio version and
 was not revisited after that version was replaced; it was also circular, since
 the dictionary passed to that test was built from the test's own answer key.
 
-## 2. `3-Reporting` stamping — Decision 2
-
-May be unnecessary. The `write-report` skill now writes frontmatter in the same
-format, so reports arrive already stamped. The open question is whether enough
-hand-written or pasted material reaches `3-Reporting` to justify a stamping
-pass at all. That is a question about your filing habits, not about the code.
-
-`4-Canon` is settled and needs no ruling: no stamping, ever. Released artifacts
-are catalogued by companion sidecars (`tier_sidecars.py`) which leave the
-artifact byte-identical.
-
-## 3. Carry the corpora report to AI Methods
-
-```
-docs/handoffs/2026-09-25-1951__reference-and-production-corpora.md
-```
-
-On the branch, not on `main`. It reports the decision to federate — each
-archived project stays its own corpus and a project agent reaches across
-several — and the two corpus kinds that follow, Production with four tiers and
-Reference with two.
-
-**Three things for the Designer**, all on their side of the line:
-
-1. `repository-structure.md`'s four-tier root check has to become the
-   *Production*-corpus check, or `search-project-corpus` will reject every
-   Reference corpus as an error. Which shared file carries the notion of corpus
-   kind is theirs to decide.
-2. The search requirement you accepted — per-corpus exhaustive search,
-   corpus-labelled results, no global ranking — needs to land somewhere
-   binding, because it is the kind of constraint that gets optimised away by
-   someone reasonably trying to make the skill tidier.
-3. One open question is genuinely theirs to answer: whether the Drive connector
-   can search several roots well. That is the only dependency that could still
-   argue against federation.
-
-`search-google-drive` is named in the report as an intention, not a spec.
-
-**Nothing here blocks the pipeline.** Federation is the cheaper option on this
-side — each corpus is simply digested, with no cross-corpus mirroring at all.
-
----
-
 # Unscheduled
 
 Nothing is waiting on me. Both items below are real work that Nick has ruled
 in or set aside, with no date and nobody blocked.
 
-## 4. Multi-word keywords
+## 2. Multi-word keywords
 
 **Ruled in by Nick, unscheduled.** Real work, nobody blocked, no date.
 
@@ -141,7 +100,7 @@ and keep both where both earn a place.
 failure that started this — that was conjunctive queries and searching in the
 wrong vocabulary, both on the searcher's side.
 
-## 5. Index or digest the `RPG` library
+## 3. Index or digest the `RPG` library
 
 **Nick's, deferred to "some day".** No date, nobody blocked.
 
@@ -220,6 +179,42 @@ spelling fix would have destroyed good output.
 
 Kept because the reasoning is worth finding again, not because anything is
 pending.
+
+## Authored tiers are stamped and catalogued
+
+**Closed.** Nick's ruling: the pipeline should add metadata to `3-Reporting`
+and `4-Canon` files that do not already have complete metadata. Two different
+mechanisms, because only one of those tiers can be touched.
+
+**`3-Reporting` is stamped in place** by the new `stamp_tier.py`, which fills
+in missing fields and leaves present ones alone. A hand-written title survives;
+a file that is already complete comes out byte-identical. No index block is
+inserted — right for a converted conversation, wrong for authored prose — and
+keywords are computed over `3-Reporting` alone, since TF-IDF is relative to the
+body measured and a report's distinctive terms should be distinctive among
+reports.
+
+**Found while testing:** the metadata pass never writes `source`. In
+`2-Digested` the converter supplies it; an authored file has no converter, so
+the field was simply never set, and every unstamped file in `3-Reporting` would
+have kept failing the self-check with no explanation. `stamp_tier.py` sets it
+to `authored`, which is the most the pipeline can honestly claim.
+
+**`4-Canon` is catalogued rather than stamped**, which is the one place this
+departs from the instruction as worded. Released artifacts are not modified —
+Nick's own earlier ruling — and most of them are not Markdown and could not
+carry frontmatter at all. The companion record `tier_sidecars.py` writes
+carries the same four fields, so the artifact becomes findable without its
+bytes changing. If a `4-Canon` Markdown file should really be stamped in place,
+say so and it is a one-line change.
+
+**One real bug fixed there.** `tier_sidecars.py` treated any Markdown artifact
+with *any* frontmatter as self-describing and skipped it. An older artifact
+carrying a bare `title:` therefore got no sidecar and was invisible to search,
+while looking finished. Completeness is now the test.
+
+**The audit report is on by default.** `AUDIT=1` in the wrapper, because it
+costs nothing and forgetting the flag was the only obstacle to item 1.
 
 ## ChatGPT assets, resolved against a measured export
 
@@ -443,7 +438,7 @@ in the pipeline depended on the answer — it converts `1-Raw` into `2-Digested`
 and never sees a conversation or a live source — but the searcher does.
 
 **The multi-word keyword requirement vanished in the split.** Accepted and
-ruled in as pipeline work; now item 4 rather than a reference-file problem.
+ruled in as pipeline work; now item 2 rather than a reference-file problem.
 
 **51% duplication in `repository-structure.md` v2.1.** Measured here,
 independently confirmed upstream, and cut in 2.3 — *The four tiers* and

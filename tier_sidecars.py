@@ -84,19 +84,33 @@ def is_sidecar(path: Path) -> bool:
     return str(fm.get("source", "")) == SIDECAR_SOURCE
 
 
+# What search needs before it can see a file at all. Frontmatter that is
+# present but missing one of these leaves the file invisible, which is worse
+# than no frontmatter because it looks finished.
+REQUIRED_FIELDS = ("title", "keywords", "date", "source")
+
+
 def has_frontmatter(path: Path) -> bool:
-    """True if a Markdown artifact already describes itself.
+    """True if a Markdown artifact already describes itself COMPLETELY.
 
     A report written by the write-report skill arrives with frontmatter of its
     own. It needs no sidecar, and duplicating it would only create a second
     record to keep in step with the first.
+
+    Completeness is the test, not presence. An older artifact may carry a bare
+    `title:` and nothing else -- enough to look self-describing, not enough for
+    search to find it. Counting that as finished left the file invisible with
+    nothing reporting why. It now gets a sidecar carrying the missing fields,
+    which is how an artifact becomes findable without its bytes being touched.
     """
     try:
         head = path.read_text(encoding="utf-8", errors="replace")[:4096]
     except OSError:
         return False
     fm, _ = add_metadata.parse_frontmatter(head)
-    return bool(fm)
+    if not fm:
+        return False
+    return all(str(fm.get(k, "") or "").strip() for k in REQUIRED_FIELDS)
 
 
 def corpus_relative(path: Path, tier_root: Path,

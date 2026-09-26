@@ -52,6 +52,15 @@ set "GLOSSARIES=%~dp0glossaries"
 REM Optional: a single standalone word list, if you have one.
 set "DICTIONARY="
 
+REM Write a rejected-keyword report on every run. The keyword
+REM filter discards strings it judges to be conversion debris,
+REM and the looser half of that filter can in principle discard
+REM a real word. The report costs nothing -- it records what the
+REM metadata pass already decided -- and it is the only way to
+REM find a false positive. On by default for that reason; set
+REM empty to turn it off.
+set "AUDIT=1"
+
 REM Set to 1 if this corpus is an EXPORT ARCHIVE -- a tree that
 REM exists only so other corpora can select project folders out
 REM of it, and that is never uploaded or searched itself.
@@ -125,6 +134,7 @@ set "OPTS="
 if not "%SUBJECT%"==""    set "OPTS=%OPTS% --subject "%SUBJECT%""
 if not "%DICTIONARY%"=="" set "OPTS=%OPTS% --dictionary "%DICTIONARY%""
 if not "%GLOSSARIES%"=="" if exist "%GLOSSARIES%" set "OPTS=%OPTS% --lexicon "%GLOSSARIES%""
+if defined AUDIT   set "DO_AUDIT=1"
 if defined DO_AUDIT set "OPTS=%OPTS% --report-artifacts "%CORPUS_ROOT%\_rejected-keywords.md""
 if defined ARCHIVE_ONLY set "OPTS=%OPTS% --archive-only"
 
@@ -166,7 +176,19 @@ echo --- Digesting 1-Raw into 2-Digested ---
     --corpus-root "%CORPUS_ROOT%" %OPTS% %DRYRUN%
 if errorlevel 1 goto :error
 
-REM ---------- Step 3: catalogue the authored tiers ------------
+REM ---------- Step 3a: stamp 3-Reporting ----------------------
+REM Reports from the write-report skill arrive already stamped.
+REM Hand-written or pasted files do not, and without a title,
+REM date, keywords and source line, search cannot see them.
+REM Only files missing a field are touched.
+if not defined ARCHIVE_ONLY if exist "%CORPUS_ROOT%\3-Reporting" (
+    echo.
+    echo --- Stamping 3-Reporting ---
+    %PY% "%PIPELINE%\stamp_tier.py" "%CORPUS_ROOT%\3-Reporting" ^
+        --corpus-root "%CORPUS_ROOT%" %DRYRUN%
+)
+
+REM ---------- Step 3b: catalogue the authored tiers ------------
 REM 4-Canon artifacts are never modified. Each gets a companion
 REM Markdown record so it can be found. An export archive has no
 REM authored tiers, so this is skipped there.

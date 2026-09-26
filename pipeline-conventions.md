@@ -253,6 +253,40 @@ and belong beside a corpus's marshaling wrapper in its `_Tools/`.
 | `<corpus>_ai_subset.txt` | `sync_subset.py` |
 | Lexicon directories | Keyword artifact vetoes |
 
+## Authored tiers
+
+`3-Reporting` and `4-Canon` hold writing the pipeline did not produce. Both
+need to be findable, and they are handled differently because only one of them
+can be touched.
+
+**`3-Reporting` is stamped in place, where a field is missing.** A report from
+the `write-report` skill arrives with a complete header. Anything hand-written,
+pasted, or older than that skill does not, and search cannot see a file with no
+`title`, `date`, `keywords` or `source`. `stamp_tier.py` fills in what is
+absent and leaves what is present, so a hand-written title or a deliberately
+set date survives. A file that is already complete is left byte-identical.
+
+Two differences from the metadata pass over `2-Digested`, both deliberate. No
+generated index block is inserted — that is right for a converted conversation
+and wrong for authored prose. And keywords are computed over `3-Reporting`
+alone, because TF-IDF is relative to the body it is measured over and a
+report's distinctive terms should be distinctive among reports.
+
+`source` is set to `authored` where nothing supplied one. In `2-Digested` a
+converter names the origin; an authored file has no converter, and `authored`
+is the most the pipeline can honestly say.
+
+**`4-Canon` is catalogued, never stamped.** Most released artifacts are not
+Markdown and could not carry frontmatter anyway, and modifying something that
+has been released is not a thing the pipeline does. `tier_sidecars.py` writes a
+companion record carrying the same four fields, and the artifact stays
+byte-identical.
+
+A Markdown artifact in `4-Canon` counts as self-describing, and is left without
+a sidecar, only when its frontmatter is **complete**. Presence is not enough: an
+older artifact carrying a bare `title:` looks finished and is still invisible to
+search. Those now get a sidecar like any other artifact.
+
 ## What the pipeline never does
 
 **It never deletes.** `clean_stale.py` reports; `pipeline_selfcheck.py` has no

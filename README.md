@@ -65,6 +65,7 @@ calls everything in order. Copy `corpus_wrapper.template.bat` into a corpus's
 | `clean_stale.py` | Reports digested files whose source cannot be found |
 | `pipeline_selfcheck.py` | Six checks over the pipeline's own output |
 | `tier_sidecars.py` | Catalogues an authored tier without modifying it |
+| `stamp_tier.py` | Fills in missing frontmatter on an authored tier's Markdown |
 | `sync_subset.py` | Mirrors a selected subset of digested conversations |
 | `subset_inventory.py` | Reports what a digested archive offers for selection, and what nothing selects |
 | `split_export.py` | Splits an AI export into per-project exports before any conversion |
