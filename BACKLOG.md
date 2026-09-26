@@ -12,16 +12,36 @@ reasoning is worth being able to find.
 
 | # | Item | Blocked on |
 |---|---|---|
-| 1 | Read the rejected-keyword report after the first digest | Nick |
-| 2 | Multi-word keywords — PM has ruled it in | Nobody; unscheduled |
-| 3 | Index or digest the `RPG` library | Nobody; someday |
+| 1 | Test the branch, then merge PR #1 to `main` | Nick |
+| 2 | Read the rejected-keyword report after the first digest | Nick |
+| 3 | Multi-word keywords | Nick and Claude, after the first digest |
+| 4 | Choose which books go in the RPG search library | Nick |
 | — | Acceptance tiers 1–4 | Out of scope — the reporting skill's job |
 
 ---
 
 # Waiting on Nick
 
-## 1. Read the rejected-keyword report after the first digest
+## 1. Test the branch, then merge PR #1 to `main`
+
+Everything from this session is on `claude/vigilant-davinci-amht34` and
+nothing has reached `main`. The branch is the version to test against — `main`
+has none of it: no delete guardrails, no rename detection, no OCR, no
+splitters.
+
+**Most of it has met fixtures, not a corpus.** The OCR pass has never run
+against a real `ocrmypdf` or a working `pypdf`; the ChatGPT splitter and asset
+resolution have never seen the real export; `stamp_tier.py`,
+`subset_inventory.py` and `split_export.py` were tested against files made up
+for the purpose.
+
+Expect the first real digest to find things. Every contact with real data
+this session did: 433 "lost images" that turned out to be horizontal rules, a
+keyword filter discarding `clock`, two pointer schemes where one was assumed,
+an import guard that would have killed an entire run. That is the reason to
+treat the first run as a test rather than a delivery.
+
+## 2. Read the rejected-keyword report after the first digest
 
 **The one to do first.** It is the only open item where the current code could
 be quietly doing damage — throwing away real words — and the audit that settles
@@ -69,14 +89,17 @@ dictionary was "earning its place" was made about the vowel-ratio version and
 was not revisited after that version was replaced; it was also circular, since
 the dictionary passed to that test was built from the test's own answer key.
 
-# Unscheduled
+# Joint
 
-Nothing is waiting on me. Both items below are real work that Nick has ruled
-in or set aside, with no date and nobody blocked.
+## 3. Multi-word keywords
 
-## 2. Multi-word keywords
+**Ruled in by Nick. Nick and Claude together, after the first digest.**
 
-**Ruled in by Nick, unscheduled.** Real work, nobody blocked, no date.
+Joint for two reasons rather than one. The scope needs a ruling only real
+output can inform — how aggressive to be about phrases — and the tuning needs
+the same corpus statistics the soft-tier audit needs. Both follow the first
+digest for the same reason: there is nothing to judge until there is output
+to judge.
 
 The requirement existed in `repository-structure.md` v1.11 — "Most keywords are
 multi-word" — and vanished when the conventions were split: v2.1 removed the
@@ -100,7 +123,7 @@ and keep both where both earn a place.
 failure that started this — that was conjunctive queries and searching in the
 wrong vocabulary, both on the searcher's side.
 
-## 3. The RPG search library
+## 4. Choose which books go in the RPG search library
 
 **Reference corpus, scoped, not started.** No longer "someday, tremendous
 work" — the premise was wrong on both sides.
