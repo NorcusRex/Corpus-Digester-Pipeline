@@ -1,0 +1,89 @@
+Output of inspect_chatgpt_assets.py, run by Nick on 2026-09-25 against the
+2026-04-29-18-02-25 ChatGPT export. Kept as the evidence behind the ChatGPT
+media work; this export is the last one, since ChatGPT is no longer in use, so
+this is the format the converter must handle permanently rather than a moving
+target.
+
+----------------------------------------------------------------------
+
+ChatGPT export asset inspection
+Folder: I:\AI\Backups\ChatGPT\Exported\1-Raw\2026-04-29-18-02-25
+
+Non-JSON files in the export folder: 1,424
+  .webp                832
+  .jpg                 188
+  .png                 144
+  .wav                 137
+  (no extension)       114
+  .jpeg                  6
+  .pdf                   2
+  .html                  1
+
+Example filenames (shape only, first 10):
+  246ad1b13b9fce3#file_00000000457071fbaf2186bc87fbf2ef#p_4.jpg-p_4.jpg
+  3fa608e43be5b4e#file_00000000457071fbaf2186bc87fbf2ef#p_10.jpg-p_10.jpg
+  49280c2e1166ae9#file_00000000457071fbaf2186bc87fbf2ef#p_22.jpg-p_22.jpg
+  70c2ef5d2992c7b#file_00000000457071fbaf2186bc87fbf2ef#p_24.jpg-p_24.jpg
+  9db204d8c770fa2#file_00000000457071fbaf2186bc87fbf2ef#p_18.jpg-p_18.jpg
+  chat.html
+  e39c4b60b7fa5d6#file_00000000457071fbaf2186bc87fbf2ef#p_0.jpg-p_0.jpg
+  file-17MjenHwKavky88N7UsuhX-cc0b4af6-f3b9-410d-9c15-6bfe73ee3a3e
+  file-1EuiALVZTgMsxudEAVjafJ-1000007970.jpg
+  file-1jW9PcBn3BrqTd6URFH9EN-Tension Dice - Preparing Content
+
+Filenames carrying a file-id: 1,417
+
+Conversations scanned: 775
+
+Content types found in message parts:
+  image_asset_pointer                              1,240
+  audio_transcription                                551
+  audio_asset_pointer                                276
+  real_time_user_audio_video_asset_pointer           275
+  metadata.attachments                               245
+
+Keys carried by each content type:
+  image_asset_pointer
+    asset_pointer, content_type, fovea, height, metadata, size_bytes, width
+  audio_transcription
+    content_type, decoding_id, direction, text
+  audio_asset_pointer
+    asset_pointer, content_type, expiry_datetime, format, metadata, size_bytes, tool_audio_direction
+  real_time_user_audio_video_asset_pointer
+    audio_asset_pointer, audio_start_timestamp, content_type, expiry_datetime, frames_asset_pointers, video_container_asset_pointer
+  metadata.attachments
+    _source, id, name, size, mime_type, source, height, width, file_token_size, mimeType, fileSizeTokens, is_big_paste, context_connector_info, library_file_id
+
+Example pointer values (identifiers, not prose):
+  image_asset_pointer
+    asset_pointer = file-service://file-47Ompsoh1mqHQ9MVjG7ygH1c
+    asset_pointer = file-service://file-G66I3h578Ah38UKSrFPBKw9l
+    asset_pointer = file-service://file-KqOqg49LNSMnwAgLxCFV7GcM
+    asset_pointer = file-service://file-RfeZZjq4MlbgAvyYencsugMc
+    asset_pointer = file-service://file-Lq7kmPb3t9l8ux1DQQCAFJz1
+  metadata.attachments
+    id = file-5n5yAEwAeemzD4K0KistfDy9
+    name = The Loom_ How to Play - Google Docs.pdf
+    file_token_size = 14778
+    id = file-2qA2aEt7hcuBmItTVWSTu3UF
+    name = Taking Action, Dice, & The Ladder • Fate Core.pdf
+  audio_asset_pointer
+    asset_pointer = sediment://file_00000000eae051f6948c352f06f33a39
+    asset_pointer = sediment://file_000000000f8851f6a6568fdfeefd57b6
+    asset_pointer = sediment://file_00000000f3dc51f6b367ca86d224f9d1
+    asset_pointer = sediment://file_000000008bc851f69a39c3940a515afc
+    asset_pointer = sediment://file_00000000340c51f6b6819546a50613e8
+
+Pointer-to-file matching, by embedded file-id:
+  pointers matching a file on disk : 1,368
+  pointers with no matching file   : 418
+  examples that did not match:
+    metadata.attachments.id = file-5n5yAEwAeemzD4K0KistfDy9
+    metadata.attachments.id = file-2qA2aEt7hcuBmItTVWSTu3UF
+    metadata.attachments.id = file-0iGm8H57SFRjkyJr7caD6Qgi
+    metadata.attachments.id = file-FxDYyXBs1jQ7i3ZuAVMfzD
+    metadata.attachments.id = file-Tdu5DttZoGb5BXG91C5AN5
+
+A high match count means the converter can resolve pointers by the
+file-id embedded in the filename. A low one means the mapping works
+some other way, and these samples will show how.
