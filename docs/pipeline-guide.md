@@ -803,6 +803,44 @@ In the wrapper, set `ARCHIVE_ONLY=1`. That also skips the `4-Canon` catalogue (a
 
 The archive corpus is a corpus in the ordinary sense: it has a `_Tools` folder, a wrapper, a configuration, and its own digest run. It simply has no project producing into it.
 
+## SPLITTING AN EXPORT BEFORE CONVERSION (split_export.py)
+
+The two-corpus flow above converts every conversation twice: once in the archive to make project folders, once in the corpus that keeps it. `split_export.py` removes the first conversion by making the folders without converting anything.
+
+```
+python split_export.py EXPORT_DIR OUT_DIR
+python split_export.py EXPORT_DIR OUT_DIR --dry-run
+python split_export.py EXPORT_DIR OUT_DIR --only <project-uuid>
+```
+
+Grouping never needed a converter. Which conversation belongs to which project is a plain read of the manifests in `projects/`; the splitter filters `conversations.json` by that map and writes one export per project. Each output folder is a valid export in its own right -- `conversations.json`, `users.json`, `projects/` -- so the pipeline digests it exactly as it would the original, and because the manifest travels with it, the receiving corpus recreates the same project folder name.
+
+The flow becomes:
+
+```
+Claude export .zip
+   |  unzip
+export\                                  <- no corpus, no digestion
+   |  split_export.py
+split\
+   project_abc12345__rpg-the-loom\        <- a complete export, one project
+   project_def67890__rpg-theory\
+   _ungrouped\
+   |  copy the folders each corpus wants into its 1-Raw
+   |  process_folder.py                  <- the ONLY conversion
+corpus\2-Digested\
+```
+
+No archive corpus, no `--archive-only` run, and each corpus's `1-Raw` holds real raw export JSON rather than Markdown that was already digested once -- which is what `1-Raw` is defined to hold.
+
+**What travels with each split.** `users.json` is copied whole: it is account-level and identical everywhere. The project's own metadata and manifest are copied into its `projects/`. Memory is split by scope rather than copied: a project's entry from `project_memories` goes with that project, and the account-level `conversations_memory` goes to `_ungrouped` rather than being duplicated into every corpus.
+
+**`_ungrouped/`** holds conversations belonging to no project -- older chats from before projects existed, and ones never moved into one. It is a selectable folder like any other, so nothing is silently unreachable. It carries an empty `projects/` folder because `is_claude_export` requires one; without it the split is not recognised as an export at all and its conversations.json falls through to a sidecar.
+
+**Per source, one writer.** Claude is implemented. ChatGPT is not: it carries real media files and the way exports reference them has changed across versions, so the routing needs `inspect_chatgpt_assets.py` run against a real export first -- until then the script refuses rather than guesses. Evernote needs no writer at all: its export is already one HTML file per note, in whatever folders you chose at export time, so there is no bundle to split.
+
+**It converts, digests, indexes and deletes nothing.** It reads an export and writes copies; the original is never touched. Re-running replaces its own output rather than merging into it, so a conversation deleted upstream does not survive in a split. Exit 1 flags an empty split or a manifest naming conversations the export does not contain.
+
 ## WHAT IS THERE TO SELECT (subset_inventory.py)
 
 `sync_subset.py` mirrors folders you name. `subset_inventory.py` tells you what the names are.

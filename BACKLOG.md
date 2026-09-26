@@ -247,6 +247,42 @@ spelling fix would have destroyed good output.
 Kept because the reasoning is worth finding again, not because anything is
 pending.
 
+## The export is split before conversion, not after
+
+**Built for Claude as `split_export.py`.** Nick's question — why can't the
+first pass skip the conversion? — and the answer turned out to be that nothing
+prevented it.
+
+Grouping never needed a converter. Which conversation belongs to which project
+is a plain read of the manifests in `projects/`. The two were coupled only
+because grouping was added inside the converter's write loop, which already
+existed. The splitter filters `conversations.json` by that map and writes one
+complete export per project, so conversion happens once, in the corpus that
+keeps the material — and each corpus's `1-Raw` holds real raw export JSON
+rather than Markdown already digested once, which is what `1-Raw` is defined
+to hold.
+
+**Rulings carried into it.** Ungrouped conversations go to `_ungrouped/` and
+are selectable like anything else. `users.json` is copied whole, being
+identical everywhere. Memory is split by scope rather than copied: a project's
+own entry travels with it, the account-level conversations memory goes to
+`_ungrouped`. That last is not fussiness — copying every project's memory into
+every corpus is the provenance-boundary failure federation was chosen to
+avoid, at a smaller scale.
+
+**One bug found in testing, worth recording.** `_ungrouped/` had no `projects/`
+folder, and `is_claude_export` requires one. Without it the split was not
+recognised as an export, its `conversations.json` fell through the converter
+dispatch, and every ungrouped conversation would have become a single sidecar.
+Silent, and exactly the class of failure this round has been about. The
+splitter now always creates `projects/`, empty where there is nothing to put
+in it.
+
+**ChatGPT's writer waits on item 2.** It carries real media and the reference
+format has moved across versions, so the routing needs the asset inspection
+first. The script refuses rather than guessing. Evernote needs no writer: its
+export is already one HTML file per note.
+
 ## The archive run does work nobody reads
 
 **Closed by `--archive-only`.** Nick's finding: two digestions into two corpora
