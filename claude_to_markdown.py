@@ -29,8 +29,15 @@ Output structure (mirroring the export under the OUTPUT_DIR):
 Important schema note: Claude's conversation export does NOT include a
 project_uuid on each conversation. The connection between conversations
 and projects exists in the live UI but is not preserved in the export.
-So conversations are flat under conversations/, not grouped by project.
 This is a limitation of Claude's export format, not of this converter.
+
+The grouping is recovered from project manifests when the export carries
+them -- see _looks_like_manifest() and the grouping pass below. A manifest
+supplies project_uuid -> [conversation_uuid] and conversations land in
+conversations/project_<short-uuid>__<slug>/. Without a manifest they stay
+flat under conversations/, which is what the export alone supports. The
+conversations_grouped / conversations_ungrouped counters report which
+happened.
 
 
 Conversation rendering preserves all branches:

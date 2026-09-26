@@ -15,9 +15,16 @@ conversations.json    <stem>/     (one .md per conversation inside)
 .json (other)         skipped (not a recognized export shape)
 .md                   copied as-is
 .txt                  wrapped with frontmatter, saved as <stem>.md
-anything else         skipped (logged in the summary)
+anything else         <name.ext>.md sidecar recording the original
 
-Lock files (~$foo.docx) and dotfiles are skipped silently.
+Lock files (~$foo.docx) and dotfiles are skipped silently, as is anything
+inside a dot-folder (.obsidian/ and friends) at any depth.
+
+Nothing in the source is dropped without a record. A file that cannot be
+converted gets a small Markdown sidecar in the output naming the original and
+its path relative to the corpus root, so `2-Digested` stays a complete view of
+`1-Raw` without duplicating bulk. Media files and export auxiliaries continue
+to be copied through as before.
 
 Usage
 -----
@@ -46,6 +53,9 @@ sys.path.insert(0, str(SCRIPT_DIR))
 import docx_to_markdown        # noqa: E402
 import xlsx_to_markdown        # noqa: E402
 import chatgpt_to_markdown     # noqa: E402
+import chatgpt_assets          # noqa: E402
+import ocr_pdf                 # noqa: E402
+import run_log                 # noqa: E402
 import claude_to_markdown      # noqa: E402
 import rtf_to_markdown         # noqa: E402
 import html_to_markdown        # noqa: E402
@@ -61,16 +71,24 @@ except ImportError:
 
 # pdf_to_markdown raises SystemExit at import time if pypdf is missing.
 # Catch that so the orchestrator can still process the other formats.
+# An optional dependency's import must never take the run down with it, and
+# ImportError is not the only way one can fail. A pypdf whose native crypto
+# backend is broken raises a pyo3 PanicException, which inherits from
+# BaseException and sails straight past `except Exception`. Found the hard
+# way, on a machine with exactly that install. KeyboardInterrupt is re-raised
+# so the broad catch cannot swallow a Ctrl-C.
 try:
     import pdf_to_markdown     # noqa: E402
     HAVE_PDF = True
     _pdf_error: str | None = None
+except KeyboardInterrupt:
+    raise
 except SystemExit as e:
     HAVE_PDF = False
     _pdf_error = str(e) or "pypdf not installed"
-except ImportError as e:
+except BaseException as e:  # noqa: BLE001
     HAVE_PDF = False
-    _pdf_error = str(e)
+    _pdf_error = str(e) or e.__class__.__name__
 
 
 SKIP_FILE_PREFIXES = ("~$", ".")  # Office lock files, dotfiles
@@ -171,31 +189,8 @@ def _is_inside(path: Path, roots: set[Path]) -> bool:
 # Console + log file tee
 # ---------------------------------------------------------------------------
 
-class _Tee:
-    """Forward writes to multiple streams. Used to mirror stdout/stderr to
-    both the console and a timestamped log file."""
-
-    def __init__(self, *streams):
-        self.streams = streams
-
-    def write(self, data: str) -> int:
-        for s in self.streams:
-            try:
-                s.write(data)
-                s.flush()
-            except Exception:  # noqa: BLE001
-                pass
-        return len(data)
-
-    def flush(self) -> None:
-        for s in self.streams:
-            try:
-                s.flush()
-            except Exception:  # noqa: BLE001
-                pass
-
-    def isatty(self) -> bool:
-        return False
+# The tee lives in run_log.py, shared with the other passes.
+_Tee = run_log.Tee
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +277,105 @@ def _copy_through(src: Path, dest_dir: Path, allocated: set,
     return f"{kind} (copied)"
 
 
+# Set once in main(). Module-level because the converter dispatch is a deep
+# call chain and threading two rarely-used settings through every frame would
+# cost more clarity than it buys.
+OCR_CACHE_DIR: Path | None = None
+EXTRACT_PDF_IMAGES: bool = True
+OCR_KEEP_PDF: bool = True
+
+_ASSET_INDEX_CACHE: dict = {}
+
+
+def _chatgpt_asset_index(export_root: Path):
+    """One AssetIndex per export folder, built on first use.
+
+    Chunked exports (conversations-000.json, -001.json, ...) share a root, and
+    the scan walks a folder holding on the order of a thousand asset files, so
+    rebuilding it per chunk would be the slowest thing in the run.
+    """
+    key = export_root.resolve()
+    if key not in _ASSET_INDEX_CACHE:
+        idx = chatgpt_assets.AssetIndex(key)
+        _ASSET_INDEX_CACHE[key] = idx
+        if idx.files_scanned:
+            print(f"  asset index: {len(idx.by_id):,} id(s) from "
+                  f"{idx.files_scanned:,} file(s)"
+                  + (f", {idx.files_without_id:,} carry no id"
+                     if idx.files_without_id else ""))
+    return _ASSET_INDEX_CACHE[key]
+
+
+def _corpus_relative(src: Path, src_root: Path, corpus_root: Path | None) -> str:
+    """Path to `src` relative to the corpus root, with forward slashes.
+
+    The same string resolves on every mirror -- under I:\\RPG\\_Design\\Loom
+    locally and under drive:RPG/_Design/Loom on Drive -- because the reader
+    supplies the root, which it already knows. An absolute Windows path would
+    be meaningless the moment the corpus is pushed.
+    """
+    for base in (corpus_root, src_root):
+        if base is None:
+            continue
+        try:
+            return src.relative_to(base).as_posix()
+        except ValueError:
+            continue
+    return src.name
+
+
+def write_unconvertible_sidecar(src: Path, out_dir: Path, allocated: set,
+                                stats: Counter, src_root: Path,
+                                corpus_root: Path | None) -> str:
+    """Write a Markdown sidecar standing in for a file we cannot convert.
+
+    The sidecar records the original's name, type, size and corpus-relative
+    path. That makes the file findable from `2-Digested` without copying its
+    bytes: a reader who needs the original follows `source_path` into `1-Raw`.
+
+    Media files and export auxiliary files do NOT come here -- they are copied
+    through, which is the right treatment for content we can preserve cheaply.
+    """
+    source_path = _corpus_relative(src, src_root, corpus_root)
+    try:
+        size = src.stat().st_size
+        mtime = datetime.fromtimestamp(src.stat().st_mtime).astimezone()
+        date_str = mtime.isoformat(timespec="minutes")
+    except OSError:
+        size = 0
+        date_str = datetime.now().astimezone().isoformat(timespec="minutes")
+
+    ext = src.suffix.lower() or "(none)"
+    fm = {
+        "title":       src.name,
+        "date":        date_str,
+        "source":      "unconverted file (sidecar)",
+        "source_file": src.name,
+        "source_path": source_path,
+        "file_type":   ext,
+        "size_bytes":  size,
+    }
+    # Same source identity the converted files carry, so a renamed original is
+    # recognisable here too.
+    add_metadata.stamp_source_identity(fm, src)
+    body = (
+        f"# {src.name}\n\n"
+        f"This file could not be converted to Markdown. The original stays in "
+        f"the raw tree; this sidecar records its identity so it is findable "
+        f"from the digested tree.\n\n"
+        f"- **Original name:** {src.name}\n"
+        f"- **File type:** {ext}\n"
+        f"- **Size:** {size:,} bytes\n"
+        f"- **Path from corpus root:** `{source_path}`\n"
+    )
+    # Keep the extension in the sidecar name so notes.zip and notes.docx
+    # cannot collide, and so the original is obvious from the filename.
+    md_path = claim_output_path(out_dir / f"{src.name}.md", allocated)
+    write_md(md_path, fm, body, docx_to_markdown.to_yaml_frontmatter)
+    stats["sidecar"] += 1
+    return "sidecar (unconvertible)"
+
+
 def wrap_plaintext(src: Path) -> tuple[dict, str]:
     """Wrap a .txt file with minimal frontmatter for downstream metadata."""
     text = src.read_text(encoding="utf-8", errors="replace")
@@ -300,13 +394,23 @@ def wrap_plaintext(src: Path) -> tuple[dict, str]:
 def process_file(src: Path, src_root: Path, out_root: Path,
                  stats: Counter, dry_run: bool,
                  allocated: set, chatgpt_roots: set,
-                 claude_roots: set) -> str:
+                 claude_roots: set,
+                 corpus_root: Path | None = None) -> str:
     """Process one file. Return a one-word kind for logging."""
     if any(src.name.startswith(p) for p in SKIP_FILE_PREFIXES):
         stats["skipped_lock_or_hidden"] += 1
         return "skipped"
 
     rel_parent = src.parent.relative_to(src_root)
+
+    # Tooling, editor state, generated listings and build output are not corpus
+    # content. The list is shared with the self-check so the two agree; when
+    # they did not, a file under `_Tools/` was ignored by one and given a
+    # sidecar by the other.
+    if add_metadata.is_utility_path(src, src_root):
+        stats["skipped_utility"] += 1
+        return "skipped (utility)"
+
     out_dir = out_root / rel_parent
     suffix = src.suffix.lower()
     stem = src.stem
@@ -342,8 +446,8 @@ def process_file(src: Path, src_root: Path, out_root: Path,
         if src.name.lower() in CHATGPT_AUX_FILENAMES:
             stats["chatgpt_aux"] += 1; return "chatgpt_aux"
         if inside_cgpt:                     stats["chatgpt_content"] += 1; return "chatgpt_content"
-        stats["unsupported"] += 1
-        return "skipped"
+        stats["sidecar"] += 1
+        return "sidecar"
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -352,12 +456,14 @@ def process_file(src: Path, src_root: Path, out_root: Path,
             md_path = claim_output_path(out_dir / f"{stem}.md", allocated)
             basename = md_path.stem  # tracks the .md filename if disambiguated
             fm, body = docx_to_markdown.convert_docx(src, out_dir, basename)
+            add_metadata.stamp_source_identity(fm, src)
             write_md(md_path, fm, body, docx_to_markdown.to_yaml_frontmatter)
             stats["docx"] += 1
             return "docx"
 
         if suffix == ".xlsx":
             fm, body = xlsx_to_markdown.convert_xlsx(src)
+            add_metadata.stamp_source_identity(fm, src)
             md_path = claim_output_path(out_dir / f"{stem}.md", allocated)
             write_md(md_path, fm, body, xlsx_to_markdown.to_yaml_frontmatter)
             stats["xlsx"] += 1
@@ -369,7 +475,29 @@ def process_file(src: Path, src_root: Path, out_root: Path,
                 return "skipped (no pypdf)"
             md_path = claim_output_path(out_dir / f"{stem}.md", allocated)
             basename = md_path.stem
-            fm, body = pdf_to_markdown.convert_pdf(src, out_dir, basename)
+            fm, body = pdf_to_markdown.convert_pdf(
+                src, out_dir, basename,
+                ocr_pages=(ocr_pdf.cached_pages(OCR_CACHE_DIR, src)
+                           if OCR_CACHE_DIR else None),
+                extract_images=EXTRACT_PDF_IMAGES)
+            # The searchable PDF travels with its Markdown. It is the artifact
+            # a person opens -- a book you can search rather than a wall of
+            # extracted text -- and having it here is what makes overwriting
+            # the original in 1-Raw unnecessary.
+            if OCR_CACHE_DIR and OCR_KEEP_PDF:
+                cached = ocr_pdf.cached_pdf(OCR_CACHE_DIR, src)
+                if cached is not None:
+                    searchable = md_path.with_suffix(".ocr.pdf")
+                    try:
+                        if not (searchable.exists()
+                                and searchable.stat().st_size == cached.stat().st_size):
+                            shutil.copy2(cached, searchable)
+                        fm["ocr_pdf"] = searchable.name
+                        stats["ocr_pdf_copied"] += 1
+                    except OSError as e:
+                        print(f"  [warn] could not place searchable PDF for "
+                              f"{src.name}: {e}", file=sys.stderr)
+            add_metadata.stamp_source_identity(fm, src)
             write_md(md_path, fm, body, pdf_to_markdown.to_yaml_frontmatter)
             stats["pdf"] += 1
             return "pdf"
@@ -378,12 +506,14 @@ def process_file(src: Path, src_root: Path, out_root: Path,
             md_path = claim_output_path(out_dir / f"{stem}.md", allocated)
             basename = md_path.stem
             fm, body = html_to_markdown.convert_html(src, out_dir, basename)
+            add_metadata.stamp_source_identity(fm, src)
             write_md(md_path, fm, body, html_to_markdown.to_yaml_frontmatter)
             stats["html"] += 1
             return "html"
 
         if suffix == ".rtf":
             fm, body = rtf_to_markdown.convert_rtf(src)
+            add_metadata.stamp_source_identity(fm, src)
             md_path = claim_output_path(out_dir / f"{stem}.md", allocated)
             write_md(md_path, fm, body, rtf_to_markdown.to_yaml_frontmatter)
             stats["rtf"] += 1
@@ -397,8 +527,8 @@ def process_file(src: Path, src_root: Path, out_root: Path,
                     return _handle_chatgpt_aux(src, out_dir, allocated, stats)
                 if inside_cgpt:
                     return _copy_through(src, out_dir, allocated, stats, "chatgpt_content")
-                stats["unsupported"] += 1
-                return "skipped (unrecognized json)"
+                return write_unconvertible_sidecar(src, out_dir, allocated,
+                                                   stats, src_root, corpus_root)
 
             # Chunked exports (conversations-000.json, conversations-001.json,
             # ...) all merge into a single 'conversations' folder so projects
@@ -412,10 +542,18 @@ def process_file(src: Path, src_root: Path, out_root: Path,
                 data = json.load(f)
             if isinstance(data, dict):
                 data = data.get("conversations") or [data]
+            # The export's asset files sit beside conversations.json. Index
+            # them once per export root: chunked exports share a root, and the
+            # scan is over a folder that can hold thousands of files.
+            asset_index = _chatgpt_asset_index(src.parent)
+
             count = 0
+            resolved = unresolved = 0
             for conv in data:
+                sink = chatgpt_assets.AssetSink(asset_index)
                 try:
-                    fm, body, dstr = chatgpt_to_markdown.render_conversation(conv)
+                    fm, body, dstr = chatgpt_to_markdown.render_conversation(
+                        conv, sink=sink)
                 except Exception as e:  # noqa: BLE001
                     print(f"  [warn] one conversation failed: {e}", file=sys.stderr)
                     continue
@@ -429,10 +567,22 @@ def process_file(src: Path, src_root: Path, out_root: Path,
                 target_dir = sub_out / subdir if subdir else sub_out
                 target_dir.mkdir(parents=True, exist_ok=True)
                 out_file = claim_output_path(target_dir / f"{dstr}__{slug}.md", allocated)
+                # Assets are placed only now: the media folder is named after
+                # the Markdown file, and that name is not settled until
+                # claim_output_path has resolved any collision.
+                body = sink.flush(out_file, body)
+                if sink.resolved:
+                    fm["assets_linked"] = sink.resolved
+                if sink.unresolved:
+                    fm["assets_missing"] = sink.unresolved
                 write_md(out_file, fm, body, chatgpt_to_markdown.to_yaml_frontmatter)
+                resolved += sink.resolved
+                unresolved += sink.unresolved
                 count += 1
             stats["chatgpt"] += 1
             stats["chatgpt_conversations"] += count
+            stats["chatgpt_assets_linked"] += resolved
+            stats["chatgpt_assets_missing"] += unresolved
             return f"chatgpt ({count} conversations)"
 
         if suffix == ".md":
@@ -443,6 +593,7 @@ def process_file(src: Path, src_root: Path, out_root: Path,
 
         if suffix == ".txt":
             fm, body = wrap_plaintext(src)
+            add_metadata.stamp_source_identity(fm, src)
             md_path = claim_output_path(out_dir / f"{stem}.md", allocated)
             write_md(md_path, fm, body, docx_to_markdown.to_yaml_frontmatter)
             stats["txt"] += 1
@@ -461,8 +612,11 @@ def process_file(src: Path, src_root: Path, out_root: Path,
             # exports use for uploaded user content.
             return _copy_through(src, out_dir, allocated, stats, "chatgpt_content")
 
-        stats["unsupported"] += 1
-        return f"skipped ({suffix or 'no extension'})"
+        # Nothing is dropped. Anything left writes a sidecar recording what it
+        # was and where it lives, so the digested tree accounts for every file
+        # in the raw tree.
+        return write_unconvertible_sidecar(src, out_dir, allocated, stats,
+                                           src_root, corpus_root)
 
     except Exception as e:  # noqa: BLE001
         stats["errors"] += 1
@@ -483,12 +637,48 @@ def walk_files(src_root: Path):
 # Main
 # ---------------------------------------------------------------------------
 
+# Folders a ChatGPT export produces before the name map is applied:
+# `project_g-p-<hex>` for a Project, `gpt_g-<hex>` for a Custom GPT. Claude's
+# grouped folders also begin with `project_`, but carry a short UUID and a
+# slug (`project_abc12345__rpg-the-loom`), so the `g-` discriminator is what
+# separates "not yet named" from "named differently".
+UNRESOLVED_PROJECT_RE = re.compile(r"^(project_g-p-|gpt_g-)", re.IGNORECASE)
+
+
+def unresolved_project_folders(root: Path) -> list[str]:
+    """Folder names under `root` still carrying a raw ChatGPT project id."""
+    if not root.is_dir():
+        return []
+    return sorted(d.name for d in root.rglob("*")
+                  if d.is_dir() and UNRESOLVED_PROJECT_RE.match(d.name))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description="Walk a folder tree and convert every supported file to Markdown."
     )
     ap.add_argument("input", help="Source directory")
     ap.add_argument("output", help="Destination directory (will mirror source structure)")
+    ap.add_argument("--corpus-root", default=None,
+                    help="Corpus root, the folder holding 1-Raw/2-Digested/"
+                         "3-Reporting/4-Canon. Sidecars record source paths "
+                         "relative to it so they resolve on every mirror. "
+                         "Default: the parent of INPUT.")
+    ap.add_argument("--dictionary", default=None,
+                    help="Word list used to veto keyword rejections. A system "
+                         "word list is used if one is found.")
+    ap.add_argument("--lexicon", action="append", default=None,
+                    help="Directory of word lists and glossaries (repeatable). "
+                         "Used to veto keyword rejections.")
+    ap.add_argument("--report-artifacts", default=None,
+                    help="Write every rejected keyword and the test that "
+                         "rejected it to this Markdown file.")
+    ap.add_argument("--no-dictionary", action="store_true",
+                    help="Do not look for a system word list.")
+    ap.add_argument("--subject", action="append", default=None,
+                    help="Speaker label naming the subject in speaker-labelled "
+                         "documents (repeatable). Used by provenance-weighted "
+                         "keyword extraction.")
     ap.add_argument("--no-metadata", action="store_true",
                     help="Skip the keyword-and-index metadata pass at the end")
     ap.add_argument("--keywords", type=int, default=None,
@@ -513,14 +703,75 @@ def main() -> int:
     ap.add_argument("--rename-tsv", default=None,
                     help="Path to the project-name TSV file (default: "
                          "project_names.tsv next to process_folder.py)")
+    ap.add_argument("--ocr", action="store_true",
+                    help="Before converting, OCR any scanned PDF that has no "
+                         "text layer and cache the result. Needs ocrmypdf on "
+                         "PATH or in OCRMYPDF_EXE. Nothing in 1-Raw is "
+                         "modified: the text is cached, the OCR'd PDF is "
+                         "discarded.")
+    ap.add_argument("--no-ocr-pdf", action="store_true",
+                    help="Do not place the searchable PDF beside the Markdown. "
+                         "By default an OCR'd book is copied into 2-Digested "
+                         "as <name>.ocr.pdf, because that is the artifact a "
+                         "reader opens. Halves the space OCR costs.")
+    ap.add_argument("--ocr-jobs", type=int, default=4,
+                    help="OCR processes to run at once (default 4)")
+    ap.add_argument("--ocr-lang", default=None,
+                    help="Tesseract language code, passed to ocrmypdf as -l")
+    ap.add_argument("--no-pdf-images", action="store_true",
+                    help="Do not extract embedded images from PDFs. For a "
+                         "scanned book every page image is the page itself, "
+                         "so extracting them duplicates the document.")
+    ap.add_argument("--no-index", action="store_true",
+                    help="Skip writing _index.json. Only search reads it, so "
+                         "an archive corpus nobody searches does not need one. "
+                         "Building it reads every output file in full.")
+    ap.add_argument("--archive-only", action="store_true",
+                    help="Shorthand for --no-metadata --no-nlm --no-index: "
+                         "convert, group and name, and stop. For an export "
+                         "archive that exists only to be selected from, whose "
+                         "output is re-digested by the corpus that receives "
+                         "it.")
     ap.add_argument("--no-nlm", action="store_true",
                     help="Skip emission of NotebookLM-friendly .nlm.md sidecars. "
                          "By default, every .md gets a frontmatter-stripped "
                          "<name>.nlm.md sibling for upload to NotebookLM.")
     args = ap.parse_args()
 
+    # --archive-only is exactly the three passes an export archive does not
+    # need. Expanded here rather than checked at each site, so every later
+    # `if not args.no_metadata` keeps working unchanged.
+    if args.archive_only:
+        args.no_metadata = True
+        args.no_nlm = True
+        args.no_index = True
+
     src_root = Path(args.input).resolve()
     out_root = Path(args.output).resolve()
+    # The pipeline is pointed at a tier (1-Raw), not at the corpus root, so the
+    # root has to be supplied or inferred. The parent of the input tier is
+    # right for the standard layout and is overridable for anything else.
+    corpus_root = (Path(args.corpus_root).resolve()
+                   if args.corpus_root else src_root.parent)
+    subject_names = ({n.lower() for n in args.subject}
+                     if args.subject else None)
+
+    global OCR_CACHE_DIR, EXTRACT_PDF_IMAGES, OCR_KEEP_PDF
+    EXTRACT_PDF_IMAGES = not args.no_pdf_images
+    OCR_KEEP_PDF = not args.no_ocr_pdf
+    # The cache sits at the corpus root rather than beside the output, so it
+    # survives a --clean rebuild of 2-Digested. Re-OCRing a hundred books
+    # because the output tree was rebuilt is exactly what the cache is for.
+    OCR_CACHE_DIR = corpus_root / ocr_pdf.CACHE_DIR_NAME if args.ocr else None
+    lexicon_dirs = list(args.lexicon or [])
+    if not lexicon_dirs and (SCRIPT_DIR / "lexicon").is_dir():
+        lexicon_dirs.append(SCRIPT_DIR / "lexicon")
+    dict_file = args.dictionary
+    if dict_file is None and not args.no_dictionary:
+        found = add_metadata.find_system_dictionary()
+        dict_file = str(found) if found else None
+    dictionary, lex_files = add_metadata.load_lexicons(lexicon_dirs, dict_file)
+    dictionary = dictionary or None
 
     if not src_root.is_dir():
         print(f"ERROR: input is not a directory: {src_root}", file=sys.stderr)
@@ -568,6 +819,7 @@ def main() -> int:
     claude_roots = find_claude_export_roots(src_root)
     print(f"Source : {src_root}")
     print(f"Output : {out_root}")
+    print(f"Corpus : {corpus_root}")
     print(f"Found  : {len(files)} files")
     if chatgpt_roots:
         print(f"ChatGPT exports detected: {len(chatgpt_roots)} folder(s)")
@@ -579,6 +831,21 @@ def main() -> int:
         print("Mode   : DRY RUN (nothing will be written)")
     print()
 
+    # ---- OCR pre-pass ---------------------------------------------------
+    # Before conversion, so the converter finds text already cached. Run as
+    # one batch rather than per file: ocrmypdf calls are independent, and
+    # running several at once is the difference between an overnight job and
+    # a weekend one.
+    if args.ocr:
+        pdfs = sorted(f for f in files if f.suffix.lower() == ".pdf")
+        if pdfs:
+            print("Checking PDFs for a text layer...")
+            ocr_pdf.run_batch(
+                pdfs, OCR_CACHE_DIR, jobs=args.ocr_jobs, lang=args.ocr_lang,
+                dry_run=args.dry_run, keep_pdf=OCR_KEEP_PDF,
+                log_path=corpus_root / "_ocr-problems.md")
+            print()
+
     stats: Counter = Counter()
     allocated: set = set()
     start = time.time()
@@ -586,7 +853,8 @@ def main() -> int:
     for i, f in enumerate(files, 1):
         rel = f.relative_to(src_root)
         kind = process_file(f, src_root, out_root, stats, args.dry_run,
-                            allocated, chatgpt_roots, claude_roots)
+                            allocated, chatgpt_roots, claude_roots,
+                            corpus_root)
         print(f"[{i:>4}/{len(files)}] {kind:<26} {rel}")
 
     # ---- Claude export pass --------------------------------------------
@@ -669,8 +937,9 @@ def main() -> int:
     print(f"  media preserved    : {stats['media']}")
     print(f"  chatgpt aux files  : {stats['chatgpt_aux']}")
     print(f"  chatgpt content    : {stats['chatgpt_content']}")
-    print(f"  unsupported        : {stats['unsupported']}")
+    print(f"  sidecars written   : {stats['sidecar']}")
     print(f"  lock/hidden skipped: {stats['skipped_lock_or_hidden']}")
+    print(f"  utility skipped    : {stats['skipped_utility']}")
     if stats['skipped_no_pypdf']:
         print(f"  pdf skipped (deps) : {stats['skipped_no_pypdf']}")
     print(f"  errors             : {stats['errors']}")
@@ -683,9 +952,9 @@ def main() -> int:
     # corpus index all reflect the final folder names.
     if not args.dry_run and HAVE_RENAMER and not args.no_rename:
         tsv_path = Path(args.rename_tsv) if args.rename_tsv else SCRIPT_DIR / "project_names.tsv"
+        print()
+        print(f"Project name map: {tsv_path}")
         if tsv_path.is_file():
-            print()
-            print(f"Applying project name map from {tsv_path.name}...")
             try:
                 mapping = rename_chatgpt_projects.load_tsv(tsv_path)
                 if mapping:
@@ -703,7 +972,29 @@ def main() -> int:
                     print("  TSV loaded but contained no valid mappings.")
             except Exception as e:  # noqa: BLE001
                 print(f"  [warn] project rename failed: {e}", file=sys.stderr)
-        # Silent skip if TSV doesn't exist -- not every user has set one up.
+        else:
+            # Not every corpus has one, so this is not an error. But say it:
+            # a missing map and a mistyped --rename-tsv path used to look
+            # identical to a successful run, and the only symptom was
+            # project_g-p-... folders nobody noticed in the output.
+            print("  not found -- no project folders will be renamed.")
+            if args.rename_tsv:
+                print("  (this path came from --rename-tsv; check the spelling)")
+
+        # Whether or not a map was applied, say so if unresolved ChatGPT
+        # project folders are left in the output. This is the symptom that
+        # matters, and it is the one the old silent skip hid.
+        unmapped = unresolved_project_folders(out_root)
+        if unmapped:
+            print(f"  [warn] {len(unmapped)} project folder(s) still carry raw "
+                  f"ChatGPT ids and are not in the map:", file=sys.stderr)
+            for name in unmapped[:10]:
+                print(f"           {name}", file=sys.stderr)
+            if len(unmapped) > 10:
+                print(f"           ... and {len(unmapped) - 10} more",
+                      file=sys.stderr)
+            print(f"         Add them to {tsv_path.name} and re-run to give "
+                  f"them readable names.", file=sys.stderr)
 
     # ---- Metadata pass --------------------------------------------------
     if not args.dry_run and not args.no_metadata:
@@ -720,18 +1011,39 @@ def main() -> int:
             print(f"  scanning {len(md_files)} files for TF-IDF corpus stats...")
             doc_freq, total_docs = add_metadata.build_corpus_doc_freq(md_files)
             print(f"  vocabulary: {len(doc_freq)} unique terms in {total_docs} files")
+        if dictionary:
+            print(f"  lexicon: {len(dictionary):,} terms from "
+                  f"{len(lex_files)} file(s)")
         changed = 0
+        meta_stats: Counter = Counter()
+        unknown_files: list[Path] = []
+        artifact_log: list = [] if args.report_artifacts else None
         for f in md_files:
             try:
+                before = meta_stats["structure_unknown"]
                 if add_metadata.process_file(f, n_keywords=args.keywords,
                                              write_index=True,
                                              doc_freq=doc_freq,
-                                             total_docs=total_docs):
+                                             total_docs=total_docs,
+                                             subject_names=subject_names,
+                                             stats=meta_stats,
+                                             dictionary=dictionary,
+                                             artifact_log=artifact_log):
                     changed += 1
+                if meta_stats["structure_unknown"] > before:
+                    unknown_files.append(f)
             except Exception as e:  # noqa: BLE001
                 print(f"  [warn] metadata for {f.relative_to(out_root)}: {e}",
                       file=sys.stderr)
         print(f"  metadata updated   : {changed} of {len(md_files)} files")
+        # Every `unknown` file is reported. They are candidates for an AI pass
+        # to recover turns, or for the owner to find the source conversation.
+        add_metadata.report_structure_stats(meta_stats, unknown_files, out_root)
+        if args.report_artifacts and artifact_log is not None:
+            add_metadata.write_artifact_report(args.report_artifacts,
+                                               artifact_log, out_root)
+            print(f"  rejected-keyword report: {args.report_artifacts}")
+        stats.update(meta_stats)
 
     # ---- NotebookLM sidecars --------------------------------------------
     # NotebookLM treats YAML frontmatter as literal text, which clutters its
@@ -779,7 +1091,7 @@ def main() -> int:
     # (<UUID>_manifest.json, handled in claude_to_markdown.py), which is
     # deliberately still called a "manifest" because that name is correct
     # there. Keep the two vocabularies separate.
-    if not args.dry_run:
+    if not args.dry_run and not args.no_index:
         try:
             md_files = [f for f in sorted(out_root.rglob("*.md"))
                         if not f.name.endswith(".nlm.md")]

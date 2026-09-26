@@ -1,2 +1,11 @@
 __pycache__/
 *.pyc
+
+# Run output: logs, generated directory listings, self-check reports.
+# These go stale the moment anything moves, so they are not tracked.
+*.log
+FILETREE.txt
+DIRTREE.txt
+tree.txt
+_selfcheck_*.md
+rejected*.md

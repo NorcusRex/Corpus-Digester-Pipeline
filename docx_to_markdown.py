@@ -48,6 +48,7 @@ import argparse
 import re
 import sys
 import zipfile
+from collections import Counter
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -66,6 +67,7 @@ A_NS    = "http://schemas.openxmlformats.org/drawingml/2006/main"
 WP_NS   = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
 PIC_NS  = "http://schemas.openxmlformats.org/drawingml/2006/picture"
 V_NS    = "urn:schemas-microsoft-com:vml"
+O_NS    = "urn:schemas-microsoft-com:office:office"
 
 
 def w(tag: str) -> str:
@@ -200,7 +202,8 @@ def is_code_style(style_id: str | None) -> bool:
 # Drawing / picture rendering
 # ---------------------------------------------------------------------------
 
-def render_drawing(drawing_el, image_paths: dict[str, str]) -> str:
+def render_drawing(drawing_el, image_paths: dict[str, str],
+                   stats: Counter | None = None) -> str:
     """Find the embed rId and any alt text; emit ![alt](path)."""
     blip = drawing_el.find(f".//{{{A_NS}}}blip")
     rid = blip.get(f"{{{R}}}embed") if blip is not None else None
@@ -216,16 +219,60 @@ def render_drawing(drawing_el, image_paths: dict[str, str]) -> str:
     if rid and rid in image_paths:
         return f"![{alt}]({image_paths[rid]})"
     # Saw a drawing but couldn't resolve its file — flag it rather than drop.
+    if stats is not None:
+        stats["unresolved_images"] += 1
     return f"![{alt or 'embedded image (unresolved)'}]()"
 
 
-def render_pict(pict_el, image_paths: dict[str, str]) -> str:
-    """Legacy VML images: <w:pict><v:shape><v:imagedata r:id=...>"""
+def _is_horizontal_rule(pict_el) -> bool:
+    """True if this picture element is a horizontal rule rather than a shape.
+
+    Word stores a rule as <w:pict><v:rect o:hr="t">, which is what an HTML
+    <hr> becomes when a web page is pasted in. It is a line, not a picture.
+    """
+    for rect in pict_el.iter(f"{{{V_NS}}}rect"):
+        if rect.get(f"{{{O_NS}}}hr") is not None:
+            return True
+        # Some producers omit the o: prefix on the attribute.
+        if rect.get("hr") is not None:
+            return True
+    return False
+
+
+def render_pict(pict_el, image_paths: dict[str, str],
+                stats: Counter | None = None) -> str:
+    """Render a VML picture element.
+
+    Three distinct cases, which an earlier version collapsed into one:
+
+    1. <v:imagedata> resolving to an extracted file -- a real image.
+    2. <v:imagedata> that will not resolve -- a real image we lost, and worth
+       reporting.
+    3. No image data at all -- not a picture. A horizontal rule (the common
+       case, since pasting a web page turns every <hr> into one) renders as a
+       rule; any other bare shape is decoration and renders as nothing.
+
+    Reporting case 3 as a broken image was wrong twice over: it put hundreds
+    of dead image links into the body, and it counted them as lost media that
+    was never there.
+    """
     imagedata = pict_el.find(f".//{{{V_NS}}}imagedata")
-    rid = imagedata.get(f"{{{R}}}id") if imagedata is not None else None
-    if rid and rid in image_paths:
-        return f"![]({image_paths[rid]})"
-    return "![embedded image (unresolved)]()"
+    if imagedata is not None:
+        rid = imagedata.get(f"{{{R}}}id")
+        if rid and rid in image_paths:
+            return f"![]({image_paths[rid]})"
+        if stats is not None:
+            stats["unresolved_images"] += 1
+        return "![embedded image (unresolved)]()"
+
+    if _is_horizontal_rule(pict_el):
+        if stats is not None:
+            stats["horizontal_rules"] += 1
+        return "\n\n---\n\n"
+
+    if stats is not None:
+        stats["decorative_shapes"] += 1
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -267,9 +314,11 @@ def render_run(run_el, ctx: dict) -> str:
         elif tag == w("br"):
             text_chunks.append("  \n")
         elif tag == w("drawing"):
-            appended_inline.append(render_drawing(child, ctx["image_paths"]))
+            appended_inline.append(
+                render_drawing(child, ctx["image_paths"], ctx.get("stats")))
         elif tag == w("pict"):
-            appended_inline.append(render_pict(child, ctx["image_paths"]))
+            appended_inline.append(
+                render_pict(child, ctx["image_paths"], ctx.get("stats")))
         elif tag == w("footnoteReference"):
             fn_id = child.get(f"{{{W}}}id")
             if fn_id:
@@ -574,6 +623,11 @@ def convert_docx(in_path: Path, out_dir: Path, basename: str) -> tuple[dict, str
     num_map = parse_numbering(numbering_xml)
     core = parse_core_props(core_xml)
 
+    # Counted as the body is rendered. Counting emissions is the point: the
+    # previous version searched the finished Markdown for "(unresolved)",
+    # which would also match a document that merely used the word in prose.
+    render_stats: Counter = Counter()
+
     ctx = {
         "hyperlinks":  hyperlinks,
         "image_paths": image_paths,
@@ -581,6 +635,7 @@ def convert_docx(in_path: Path, out_dir: Path, basename: str) -> tuple[dict, str
         "used_fn_ids": set(),
         "used_en_ids": set(),
         "used_c_ids":  set(),
+        "stats":       render_stats,
     }
 
     # Notes are rendered with the same paragraph machinery, so they retain
@@ -641,9 +696,14 @@ def convert_docx(in_path: Path, out_dir: Path, basename: str) -> tuple[dict, str
     fm["endnote_count"]    = len(endnotes)
     fm["comment_count"]    = len(comments)
 
-    unresolved = body_md.count("(unresolved)")
-    if unresolved:
-        fm["unresolved_drawings"] = unresolved
+    # `unresolved_drawings` was the old name and it never meant drawings: it
+    # counted every picture element without image data, horizontal rules
+    # included. Renamed to say what it counts, and only written when a real
+    # image could not be resolved.
+    if render_stats["unresolved_images"]:
+        fm["unresolved_images"] = render_stats["unresolved_images"]
+    if render_stats["horizontal_rules"]:
+        fm["horizontal_rules"] = render_stats["horizontal_rules"]
 
     # Add a top-level heading from the title if the body doesn't open with one.
     title = fm.get("title", "")
