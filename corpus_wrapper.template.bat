@@ -21,8 +21,9 @@ REM     <this file> --all            everything
 REM     <this file> --dry-run        show what would happen, change nothing
 REM     <this file> --audit          also write a rejected-keyword report
 REM
-REM   Configuration files (the selection list, project_names.tsv)
-REM   are data, not code. They live beside this wrapper.
+REM   Configuration files (the selection lists, project_names.tsv)
+REM   are data, not code. They live beside this wrapper, and a
+REM   copy found here overrides the pipeline's own.
 REM ============================================================
 
 REM ---------- CONFIGURATION: edit these ----------------------
@@ -52,9 +53,20 @@ REM Optional: a single standalone word list, if you have one.
 set "DICTIONARY="
 
 REM Optional: mirroring selected AI conversations into this
-REM corpus. Leave SELLIST empty to skip the --sync step.
-set "SELLIST=%~dp0loom_ai_subset.txt"
-set "SRC_CLAUDE=I:\AI\Backups\Claude\Exported\2-Digested"
+REM corpus from a central digested export archive.
+REM
+REM ONE LIST PER SOURCE. The two exports name their project
+REM folders differently -- Claude's are
+REM `project_<short-uuid>__<slug>`, ChatGPT's are whatever
+REM project_names.tsv renamed them to -- so a shared list would
+REM report each source's entries as missing from the other.
+REM Leave a list empty to skip that source.
+REM
+REM Run subset_inventory.py against a source to see what is
+REM there to select and what nothing selects yet.
+set "SELLIST_CLAUDE=%~dp0subset_claude.txt"
+set "SELLIST_CHATGPT=%~dp0subset_chatgpt.txt"
+set "SRC_CLAUDE=I:\AI\Backups\Claude\Exported\2-Digested\conversations"
 set "SRC_CHATGPT=I:\AI\Backups\ChatGPT\Exported\2-Digested"
 set "DST_CLAUDE=%CORPUS_ROOT%\1-Raw\FromNick\Notes\AI\Claude\Conversations\Exported"
 set "DST_CHATGPT=%CORPUS_ROOT%\1-Raw\FromNick\Notes\AI\ChatGPT\Conversations\Exported"
@@ -101,6 +113,15 @@ if not "%DICTIONARY%"=="" set "OPTS=%OPTS% --dictionary "%DICTIONARY%""
 if not "%GLOSSARIES%"=="" if exist "%GLOSSARIES%" set "OPTS=%OPTS% --lexicon "%GLOSSARIES%""
 if defined DO_AUDIT set "OPTS=%OPTS% --report-artifacts "%CORPUS_ROOT%\_rejected-keywords.md""
 
+REM A project-name map beside this wrapper overrides the pipeline's
+REM own copy. Without one, process_folder.py falls back to
+REM project_names.tsv next to itself -- which is usually what you
+REM want, since ChatGPT project ids are account-level rather than
+REM per-corpus. Pass the override only when the file is really there,
+REM so a missing per-corpus copy falls through instead of pointing
+REM the pipeline at a path that does not exist.
+if exist "%~dp0project_names.tsv" set "OPTS=%OPTS% --rename-tsv "%~dp0project_names.tsv""
+
 for %%I in ("%CORPUS_ROOT%") do set "CORPUS_NAME=%%~nxI"
 
 echo.
@@ -110,13 +131,17 @@ echo   Root  : %CORPUS_ROOT%
 echo ============================================================
 
 REM ---------- Step 1: mirror selected AI conversations --------
-if defined DO_SYNC if not "%SELLIST%"=="" (
-    echo.
-    echo --- Mirroring selected Claude conversations ---
-    call "%PIPELINE%\sync_gdrive_corpus.bat" "%SELLIST%" "%SRC_CLAUDE%" "%DST_CLAUDE%" %DRYRUN%
-    echo.
-    echo --- Mirroring selected ChatGPT conversations ---
-    call "%PIPELINE%\sync_gdrive_corpus.bat" "%SELLIST%" "%SRC_CHATGPT%" "%DST_CHATGPT%" %DRYRUN%
+if defined DO_SYNC (
+    if not "%SELLIST_CLAUDE%"=="" if exist "%SELLIST_CLAUDE%" (
+        echo.
+        echo --- Mirroring selected Claude conversations ---
+        call "%PIPELINE%\sync_gdrive_corpus.bat" "%SELLIST_CLAUDE%" "%SRC_CLAUDE%" "%DST_CLAUDE%" %DRYRUN%
+    )
+    if not "%SELLIST_CHATGPT%"=="" if exist "%SELLIST_CHATGPT%" (
+        echo.
+        echo --- Mirroring selected ChatGPT conversations ---
+        call "%PIPELINE%\sync_gdrive_corpus.bat" "%SELLIST_CHATGPT%" "%SRC_CHATGPT%" "%DST_CHATGPT%" %DRYRUN%
+    )
 )
 
 REM ---------- Step 2: digest ----------------------------------

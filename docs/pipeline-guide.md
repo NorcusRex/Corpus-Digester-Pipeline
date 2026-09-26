@@ -754,6 +754,49 @@ The command-line argument selects how much it does:
 
 **The wrapper never deletes.** The stale check and the self-check report only. Removing anything means running `clean_stale.py` yourself, deliberately, with the flags above. That is a change from the old `digest_all.bat`, whose `--delete-stale` would have removed digested output whose source had merely been renamed or cleared to save space.
 
+## TWO CORPORA, TWO DIGEST RUNS
+
+The thing that is easy to get wrong, so it is stated before the mechanics: **an export archive is itself a corpus, and it must be digested by its own run before any other corpus can select from it.**
+
+There is no pre-processing step, and no "partial digestion". You unzip the export straight into the archive corpus's `1-Raw` -- conversations.json, users.json, projects/, exactly as the provider wrote them. One run of `process_folder.py` then does everything in a single pass: conversion, project grouping, project renaming, metadata, NotebookLM sidecars, and the index. Project structure and readable names are produced INSIDE that one pass, not before it.
+
+```
+Claude export .zip
+   |
+   v  unzip, no processing
+I:\AI\Backups\Claude\Exported\1-Raw\           <- the archive corpus
+   |
+   v  process_folder.py   (one pass: convert, group, rename, index)
+I:\AI\Backups\Claude\Exported\2-Digested\
+       conversations\
+           project_abc12345__rpg-the-loom\
+           project_def67890__rpg-theory\
+   |
+   v  sync_subset.py --list <this corpus's list>
+I:\RPG\_Design\Loom-Nick\1-Raw\...\Exported\   <- the project corpus
+   |
+   v  process_folder.py   (second run, different corpus)
+I:\RPG\_Design\Loom-Nick\2-Digested\
+```
+
+**Two digest runs, in two different corpora** -- not two levels of digestion within one. The second run re-reads Markdown the first run wrote, which is intentional and safe: existing `date` and `title` frontmatter are preserved, `.nlm.md` sidecars are skipped by both the metadata and sidecar passes, and keywords are recomputed against the receiving corpus. That last is the point. TF-IDF is corpus-relative, so a term's distinctiveness in Loom is a different measurement from its distinctiveness in the whole archive, and the receiving corpus should carry its own.
+
+The archive corpus is a corpus in the ordinary sense: it has a `_Tools` folder, a wrapper, a configuration, and its own digest run. It simply has no project producing into it.
+
+## WHAT IS THERE TO SELECT (subset_inventory.py)
+
+`sync_subset.py` mirrors folders you name. `subset_inventory.py` tells you what the names are.
+
+```
+python subset_inventory.py SOURCE --list Loom=...\subset_claude.txt --report inv.md
+```
+
+SOURCE is the tree whose immediate subfolders are selectable -- `2-Digested\conversations` for a Claude archive, the folder holding the `project_*` folders for ChatGPT. It reports every selectable folder with file counts, size and the span of dates it covers; which of the given lists names each one; **folders no list names**; and list entries naming a folder that is not there.
+
+The unselected list is the reason the script exists. A project nobody selected is not an error anywhere in the pipeline: it simply never reaches a corpus, and the only symptom is a search finding nothing and being unable to say why. Everything else here is convenience; that part is a real gap closed.
+
+It reads and writes nothing but its report. Exit 1 means something is unselected or unmatched, exit 0 means everything is claimed and every entry resolved.
+
 ## SUBSET MIRROR (sync_subset.py)
 
 The problem: some exports are topic-blind at the source. A Claude or ChatGPT data export is one undifferentiated blob covering every subject. The project/topic structure only becomes legible AFTER digestion, because digestion is the step that resolves it into named folders. If you want only a SUBSET of those folders in a downstream corpus, you cannot filter before digesting -- the thing you would filter on does not exist yet. You must digest the whole export, then select.
@@ -773,6 +816,7 @@ IMPORTANT: within a selected folder, destination-only files are deleted so the m
 All site-specific knowledge lives in DATA, never in the engine:
 
 - The selection list (one folder name per line; # comments and blank lines ignored) is corpus configuration. It lives WITH THE CORPUS, not in this tooling folder -- the same way project_names.tsv is data the pipeline reads but does not contain.
+- ONE LIST PER SOURCE. The two exports name their project folders differently: Claude's are `project_<short-uuid>__<slug>`, produced from the manifest during conversion, while ChatGPT's are whatever `project_names.tsv` renamed them to. A list shared between both sources would report each source's entries as missing from the other on every run. The wrapper takes `SELLIST_CLAUDE` and `SELLIST_CHATGPT` separately, and skips a source whose list is empty or absent.
 - A thin per-corpus wrapper holds the paths and calls the generic engine. See `corpus_wrapper.template.bat` for the worked example.
 
 This generic-engine / site-launcher / site-data split is the same separation the rest of the pipeline already uses, and it means the same engine serves any future subset need (a different topic, a collaborator's folders, an Evernote notebook set) with only a new data list and a new thin launcher -- no code change.

@@ -66,6 +66,7 @@ calls everything in order. Copy `corpus_wrapper.template.bat` into a corpus's
 | `pipeline_selfcheck.py` | Six checks over the pipeline's own output |
 | `tier_sidecars.py` | Catalogues an authored tier without modifying it |
 | `sync_subset.py` | Mirrors a selected subset of digested conversations |
+| `subset_inventory.py` | Reports what a digested archive offers for selection, and what nothing selects |
 | `inspect_chatgpt_assets.py` | Reports how an export references its media |
 | `*_to_markdown.py` | The converters |
 

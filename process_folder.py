@@ -579,6 +579,22 @@ def walk_files(src_root: Path):
 # Main
 # ---------------------------------------------------------------------------
 
+# Folders a ChatGPT export produces before the name map is applied:
+# `project_g-p-<hex>` for a Project, `gpt_g-<hex>` for a Custom GPT. Claude's
+# grouped folders also begin with `project_`, but carry a short UUID and a
+# slug (`project_abc12345__rpg-the-loom`), so the `g-` discriminator is what
+# separates "not yet named" from "named differently".
+UNRESOLVED_PROJECT_RE = re.compile(r"^(project_g-p-|gpt_g-)", re.IGNORECASE)
+
+
+def unresolved_project_folders(root: Path) -> list[str]:
+    """Folder names under `root` still carrying a raw ChatGPT project id."""
+    if not root.is_dir():
+        return []
+    return sorted(d.name for d in root.rglob("*")
+                  if d.is_dir() and UNRESOLVED_PROJECT_RE.match(d.name))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description="Walk a folder tree and convert every supported file to Markdown."
@@ -818,9 +834,9 @@ def main() -> int:
     # corpus index all reflect the final folder names.
     if not args.dry_run and HAVE_RENAMER and not args.no_rename:
         tsv_path = Path(args.rename_tsv) if args.rename_tsv else SCRIPT_DIR / "project_names.tsv"
+        print()
+        print(f"Project name map: {tsv_path}")
         if tsv_path.is_file():
-            print()
-            print(f"Applying project name map from {tsv_path.name}...")
             try:
                 mapping = rename_chatgpt_projects.load_tsv(tsv_path)
                 if mapping:
@@ -838,7 +854,29 @@ def main() -> int:
                     print("  TSV loaded but contained no valid mappings.")
             except Exception as e:  # noqa: BLE001
                 print(f"  [warn] project rename failed: {e}", file=sys.stderr)
-        # Silent skip if TSV doesn't exist -- not every user has set one up.
+        else:
+            # Not every corpus has one, so this is not an error. But say it:
+            # a missing map and a mistyped --rename-tsv path used to look
+            # identical to a successful run, and the only symptom was
+            # project_g-p-... folders nobody noticed in the output.
+            print("  not found -- no project folders will be renamed.")
+            if args.rename_tsv:
+                print("  (this path came from --rename-tsv; check the spelling)")
+
+        # Whether or not a map was applied, say so if unresolved ChatGPT
+        # project folders are left in the output. This is the symptom that
+        # matters, and it is the one the old silent skip hid.
+        unmapped = unresolved_project_folders(out_root)
+        if unmapped:
+            print(f"  [warn] {len(unmapped)} project folder(s) still carry raw "
+                  f"ChatGPT ids and are not in the map:", file=sys.stderr)
+            for name in unmapped[:10]:
+                print(f"           {name}", file=sys.stderr)
+            if len(unmapped) > 10:
+                print(f"           ... and {len(unmapped) - 10} more",
+                      file=sys.stderr)
+            print(f"         Add them to {tsv_path.name} and re-run to give "
+                  f"them readable names.", file=sys.stderr)
 
     # ---- Metadata pass --------------------------------------------------
     if not args.dry_run and not args.no_metadata:

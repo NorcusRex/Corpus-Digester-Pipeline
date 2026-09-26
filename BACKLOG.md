@@ -247,6 +247,58 @@ spelling fix would have destroyed good output.
 Kept because the reasoning is worth finding again, not because anything is
 pending.
 
+## Selection, and the three silent failures around it
+
+**Closed.** Four changes, all from one thread: you cannot control what an AI
+export contains, so selecting from it is the real work, and three of the ways
+it went wrong were silent.
+
+**`subset_inventory.py` is new.** `sync_subset.py` mirrors folders you name;
+this reports what the names are. Per selectable folder: file count, Markdown
+count, size, and the span of dates it covers. Given selection lists it also
+says which lists claim each folder, **which folders nothing claims**, and which
+list entries name a folder that is not there.
+
+The unclaimed list is why it exists. A project nobody selected is not an error
+anywhere in the pipeline — it simply never reaches a corpus, and the only
+symptom is a search finding nothing and being unable to say why. The rest is
+convenience.
+
+**The project-name map now says where it looked.** `process_folder.py` printed
+nothing at all when `project_names.tsv` was absent — the code comment read
+`# Silent skip if TSV doesn't exist`. A mistyped `--rename-tsv` path looked
+identical to a successful run. It now prints the path it tried, says plainly
+when the file is not there, and points at `--rename-tsv` when the path came
+from there.
+
+**And it warns about the symptom, not just the cause.** After the rename pass,
+any folder still carrying a raw ChatGPT id (`project_g-p-…`, `gpt_g-…`) is
+reported by name. Claude's grouped folders also begin with `project_` but carry
+a short UUID and a slug, so the `g-` discriminator separates "not yet named"
+from "named differently" without false positives — verified against both
+shapes.
+
+**A project-name map beside the wrapper now wins.** The wrapper's own header
+claimed configuration files live beside it; for the TSV that was false, since
+the code only looked next to `process_folder.py` and the wrapper never passed
+`--rename-tsv`. It now passes it when the file is really there, so a corpus can
+override and the account-level copy stays the default.
+
+**One selection list per source.** The wrapper called the sync twice with one
+shared list. The two exports name their folders differently — Claude's are
+`project_<short-uuid>__<slug>` from the manifest, ChatGPT's are whatever the
+TSV renamed them to — so every run reported each source's entries as missing
+from the other and exited 1. Now `SELLIST_CLAUDE` and `SELLIST_CHATGPT`, each
+skipped when empty or absent.
+
+**Two documentation faults found while doing this**, both stating the opposite
+of what the code does. `docs/pipeline-guide.md` never said the export archive
+is itself a corpus needing its own digest run before anything can select from
+it; it now carries the two-corpus flow as a diagram. And
+`claude_to_markdown.py`'s docstring said conversations are "flat under
+conversations/, not grouped by project", which stopped being true when manifest
+recovery was added.
+
 ## The shared-file versioning rule
 
 **Closed at `project-manifest-format.md` 1.4**, after two round trips and one
