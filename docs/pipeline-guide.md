@@ -779,7 +779,27 @@ I:\RPG\_Design\Loom-Nick\1-Raw\...\Exported\   <- the project corpus
 I:\RPG\_Design\Loom-Nick\2-Digested\
 ```
 
-**Two digest runs, in two different corpora** -- not two levels of digestion within one. The second run re-reads Markdown the first run wrote, which is intentional and safe: existing `date` and `title` frontmatter are preserved, `.nlm.md` sidecars are skipped by both the metadata and sidecar passes, and keywords are recomputed against the receiving corpus. That last is the point. TF-IDF is corpus-relative, so a term's distinctiveness in Loom is a different measurement from its distinctiveness in the whole archive, and the receiving corpus should carry its own.
+### The archive run should be a short one
+
+The archive is never uploaded and never searched, so three of the passes in a full run produce nothing anyone will read:
+
+| Pass | Cost per file | Why it is waste here |
+|---|---|---|
+| Metadata / keywords | two full reads and a rewrite | The most expensive pass in the pipeline. It scans every file to build TF-IDF document frequencies, then rewrites every file. The keywords are then **thrown away**, because TF-IDF is corpus-relative and the receiving corpus recomputes its own. |
+| NotebookLM sidecars | one read and one write | Doubles the file count of the archive. Every sidecar is re-derived downstream. |
+| `_index.json` | one full read | Reads every output file in full. Only search reads the index, and nothing searches the archive. |
+
+Use `--archive-only`, which is shorthand for `--no-metadata --no-nlm --no-index`:
+
+```
+python process_folder.py "...\Exported\1-Raw" "...\Exported\2-Digested" --archive-only
+```
+
+What survives is what selection actually needs: conversion, project grouping, and the project name map. Roughly four reads and two writes per file come off the run.
+
+In the wrapper, set `ARCHIVE_ONLY=1`. That also skips the `4-Canon` catalogue (an archive has no authored tiers) and the self-check, which would otherwise report missing frontmatter and a missing index as faults when they are the intended state.
+
+**Two digest runs, in two different corpora** -- not two levels of digestion within one. The second run re-reads Markdown the first run wrote. With `--archive-only` on the first, this is the only run that does the expensive work, and it does it once. It is safe to re-read: existing `date` and `title` frontmatter are preserved, `.nlm.md` sidecars are skipped by both the metadata and sidecar passes, and keywords are recomputed against the receiving corpus. That last is the point. TF-IDF is corpus-relative, so a term's distinctiveness in Loom is a different measurement from its distinctiveness in the whole archive, and the receiving corpus should carry its own.
 
 The archive corpus is a corpus in the ordinary sense: it has a `_Tools` folder, a wrapper, a configuration, and its own digest run. It simply has no project producing into it.
 

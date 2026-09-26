@@ -645,11 +645,29 @@ def main() -> int:
     ap.add_argument("--rename-tsv", default=None,
                     help="Path to the project-name TSV file (default: "
                          "project_names.tsv next to process_folder.py)")
+    ap.add_argument("--no-index", action="store_true",
+                    help="Skip writing _index.json. Only search reads it, so "
+                         "an archive corpus nobody searches does not need one. "
+                         "Building it reads every output file in full.")
+    ap.add_argument("--archive-only", action="store_true",
+                    help="Shorthand for --no-metadata --no-nlm --no-index: "
+                         "convert, group and name, and stop. For an export "
+                         "archive that exists only to be selected from, whose "
+                         "output is re-digested by the corpus that receives "
+                         "it.")
     ap.add_argument("--no-nlm", action="store_true",
                     help="Skip emission of NotebookLM-friendly .nlm.md sidecars. "
                          "By default, every .md gets a frontmatter-stripped "
                          "<name>.nlm.md sibling for upload to NotebookLM.")
     args = ap.parse_args()
+
+    # --archive-only is exactly the three passes an export archive does not
+    # need. Expanded here rather than checked at each site, so every later
+    # `if not args.no_metadata` keeps working unchanged.
+    if args.archive_only:
+        args.no_metadata = True
+        args.no_nlm = True
+        args.no_index = True
 
     src_root = Path(args.input).resolve()
     out_root = Path(args.output).resolve()
@@ -973,7 +991,7 @@ def main() -> int:
     # (<UUID>_manifest.json, handled in claude_to_markdown.py), which is
     # deliberately still called a "manifest" because that name is correct
     # there. Keep the two vocabularies separate.
-    if not args.dry_run:
+    if not args.dry_run and not args.no_index:
         try:
             md_files = [f for f in sorted(out_root.rglob("*.md"))
                         if not f.name.endswith(".nlm.md")]

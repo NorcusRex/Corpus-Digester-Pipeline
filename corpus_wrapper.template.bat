@@ -52,6 +52,20 @@ set "GLOSSARIES=%~dp0glossaries"
 REM Optional: a single standalone word list, if you have one.
 set "DICTIONARY="
 
+REM Set to 1 if this corpus is an EXPORT ARCHIVE -- a tree that
+REM exists only so other corpora can select project folders out
+REM of it, and that is never uploaded or searched itself.
+REM
+REM It then converts, groups and names, and stops. Keywords, the
+REM NotebookLM sidecars and _index.json are all skipped, because
+REM the corpus that receives the selection re-digests what it
+REM takes and computes its own. Keywords especially: TF-IDF is
+REM corpus-relative, so the archive's are the wrong numbers AND
+REM the most expensive pass in the run.
+REM
+REM Leave empty for a normal corpus.
+set "ARCHIVE_ONLY="
+
 REM Optional: mirroring selected AI conversations into this
 REM corpus from a central digested export archive.
 REM
@@ -112,6 +126,7 @@ if not "%SUBJECT%"==""    set "OPTS=%OPTS% --subject "%SUBJECT%""
 if not "%DICTIONARY%"=="" set "OPTS=%OPTS% --dictionary "%DICTIONARY%""
 if not "%GLOSSARIES%"=="" if exist "%GLOSSARIES%" set "OPTS=%OPTS% --lexicon "%GLOSSARIES%""
 if defined DO_AUDIT set "OPTS=%OPTS% --report-artifacts "%CORPUS_ROOT%\_rejected-keywords.md""
+if defined ARCHIVE_ONLY set "OPTS=%OPTS% --archive-only"
 
 REM A project-name map beside this wrapper overrides the pipeline's
 REM own copy. Without one, process_folder.py falls back to
@@ -153,8 +168,9 @@ if errorlevel 1 goto :error
 
 REM ---------- Step 3: catalogue the authored tiers ------------
 REM 4-Canon artifacts are never modified. Each gets a companion
-REM Markdown record so it can be found.
-if exist "%CORPUS_ROOT%\4-Canon" (
+REM Markdown record so it can be found. An export archive has no
+REM authored tiers, so this is skipped there.
+if not defined ARCHIVE_ONLY if exist "%CORPUS_ROOT%\4-Canon" (
     echo.
     echo --- Cataloguing 4-Canon ---
     %PY% "%PIPELINE%\tier_sidecars.py" "%CORPUS_ROOT%\4-Canon" ^
@@ -167,10 +183,17 @@ echo --- Checking for digested files whose source is gone ---
 %PY% "%PIPELINE%\clean_stale.py" "%CORPUS_ROOT%\1-Raw" "%CORPUS_ROOT%\2-Digested"
 
 REM ---------- Step 5: self-check ------------------------------
+REM Skipped for an export archive: the checks that matter there
+REM (frontmatter, the index) are for output this run deliberately
+REM did not produce, so they would report the intended state as a
+REM fault. Completeness still holds and is checked where the
+REM material lands.
+if not defined ARCHIVE_ONLY (
 echo.
 echo --- Pipeline self-check ---
 %PY% "%PIPELINE%\pipeline_selfcheck.py" "%CORPUS_ROOT%" ^
     --report "%CORPUS_ROOT%\_selfcheck_%CORPUS_NAME%.md"
+)
 
 REM ---------- Step 6: push ------------------------------------
 if defined DO_PUSH (

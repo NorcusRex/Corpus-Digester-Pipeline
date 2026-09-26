@@ -247,6 +247,36 @@ spelling fix would have destroyed good output.
 Kept because the reasoning is worth finding again, not because anything is
 pending.
 
+## The archive run does work nobody reads
+
+**Closed by `--archive-only`.** Nick's finding: two digestions into two corpora
+is wasteful if the full treatment runs in both, and the detailed passes are
+unnecessary in an archive that is never uploaded or searched.
+
+Correct, and the worst of it was the most expensive pass in the pipeline. The
+metadata pass scans every file to build TF-IDF document frequencies, then
+rewrites every file — and the keywords it produces are discarded, because
+TF-IDF is corpus-relative and the receiving corpus recomputes its own against a
+different vocabulary. The NotebookLM sidecars doubled the archive's file count
+to produce files that are re-derived downstream. `_index.json` read every
+output file in full to build something only search reads.
+
+`--no-index` is new; `--no-metadata` and `--no-nlm` already existed but nothing
+said to use them together or why. `--archive-only` is the three of them, and
+`ARCHIVE_ONLY=1` in the wrapper adds it and also skips the `4-Canon` catalogue
+and the self-check — the latter because it would report the missing frontmatter
+and missing index as faults when they are the intended state.
+
+What survives is what selection needs: conversion, project grouping, and the
+name map. About four reads and two writes per file come off the archive run.
+
+**A larger version of this is not built.** Splitting the raw export by project
+*before* conversion would remove the second conversion entirely, and would put
+real raw JSON in each corpus's `1-Raw` instead of once-digested Markdown, which
+matches the tier definition better. It is the right architecture and it is real
+work — two export schemas to track, attachment routing, a home for ungrouped
+conversations. Raised, not scheduled.
+
 ## Selection, and the three silent failures around it
 
 **Closed.** Four changes, all from one thread: you cannot control what an AI
