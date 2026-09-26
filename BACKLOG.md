@@ -15,8 +15,9 @@ reasoning is worth being able to find.
 | 1 | Keyword soft tier — run the audit, then rule | Nick |
 | 2 | ChatGPT export media — run the inspection | Nick |
 | 3 | `3-Reporting` stamping — rule whether it is needed | Nick |
-| 4 | Two inconsistencies between the new reference files | Nick |
-| 5 | ChatGPT export media — build the fix | Item 2 |
+| 4 | Carry the handoff note to AI Methods, return three files | Nick |
+| 5 | Two inconsistencies between the new reference files | Item 4 |
+| 6 | ChatGPT export media — build the fix | Item 2 |
 | — | Acceptance tiers 1–4 | Out of scope — the reporting skill's job |
 
 ---
@@ -79,7 +80,7 @@ python inspect_chatgpt_assets.py "<export folder>" --report assets.txt
 ```
 
 Needed because the export format has changed across ChatGPT versions, and the
-pointer-to-file mapping should be known rather than guessed. Unblocks item 5.
+pointer-to-file mapping should be known rather than guessed. Unblocks item 6.
 
 ## 3. `3-Reporting` stamping — Decision 2
 
@@ -92,7 +93,36 @@ pass at all. That is a question about your filing habits, not about the code.
 are catalogued by companion sidecars (`tier_sidecars.py`) which leave the
 artifact byte-identical.
 
-## 4. Two inconsistencies between the new reference files
+## 4. Carry the handoff note to AI Methods
+
+The note is written, current and pushed:
+
+```
+docs/handoffs/2026-09-25-1514__reference-file-ownership.md
+```
+
+**On the branch, not on `main`.** Read it on GitHub from
+`claude/vigilant-davinci-amht34`, or from the local clone after checking that
+branch out. Paste it into the AI Methods conversation.
+
+**Three things come back**, each as a new version of a file the Designer owns:
+
+| File | Version | For |
+|---|---|---|
+| `repository-structure.md` | v2.2 | The cut list — 51% of it duplicates the glossary |
+| `project-manifest-format.md` | v1.2 | The shared-file versioning rule |
+| `corpus-glossary.md` | possibly | Only if the three-versus-four count moves here instead |
+
+Drop the returned files into `references/` and tell me; I will check each
+against the code and against the other two, the way v1.1 and v2.1 were checked.
+
+**Why it is a card rather than a step.** Designer and Developer have no channel
+to each other — every change crosses through you as a file. So this is the
+blocking link in the chain, and item 5 cannot move until it clears. It is also
+the point where versions start to drift: the fix sits in the note until someone
+walks it over.
+
+## 5. Two inconsistencies between the new reference files
 
 **The sidecar half is resolved.** Both `corpus-glossary.md` v1.0 and
 `repository-structure.md` v2.1 now describe it correctly — the glossary says the
@@ -101,7 +131,10 @@ files it cannot convert "appear as a small Markdown sidecar recording the
 original's name, type and source path". The message drafted for the source
 conversation on this point is no longer needed.
 
-Two smaller things remain, both for whoever maintains the shared files.
+Two smaller things remain, both for whoever maintains the shared files. **Both
+are written up in the handoff note**, so they travel with item 4 rather than
+needing anything separate from you — this entry records the findings, item 4
+delivers them.
 
 **The corpus is three places or four, depending which file you read.**
 `corpus-glossary.md` v1.0 says four — conversation, past conversations,
@@ -132,7 +165,7 @@ entries.
 
 # Waiting on me
 
-## 5. ChatGPT export media — build the fix
+## 6. ChatGPT export media — build the fix
 
 **Blocked on item 2.**
 
@@ -331,7 +364,7 @@ A manifest carrying `manifest_format_version`, every documented field, and
 invented keys besides is still recognised correctly. The manifest is recorded
 as a named pipeline input in the pipeline guide alongside `project_names.tsv`.
 
-The version-numbering oddity found while doing this is under item 4, since it
+The version-numbering oddity found while doing this is under item 5, since it
 goes back to the same place.
 
 ## Keyword weighting simplified to one question
