@@ -200,13 +200,13 @@ the field was simply never set, and every unstamped file in `3-Reporting` would
 have kept failing the self-check with no explanation. `stamp_tier.py` sets it
 to `authored`, which is the most the pipeline can honestly claim.
 
-**`4-Canon` is catalogued rather than stamped**, which is the one place this
-departs from the instruction as worded. Released artifacts are not modified —
-Nick's own earlier ruling — and most of them are not Markdown and could not
-carry frontmatter at all. The companion record `tier_sidecars.py` writes
-carries the same four fields, so the artifact becomes findable without its
-bytes changing. If a `4-Canon` Markdown file should really be stamped in place,
-say so and it is a one-line change.
+**`4-Canon` is catalogued rather than stamped.** This departed from the
+instruction as worded, so it was raised rather than done quietly: released
+artifacts are not modified — Nick's own earlier ruling — and most of them are
+not Markdown and could not carry frontmatter at all. The companion record
+`tier_sidecars.py` writes carries the same four fields, so the artifact becomes
+findable without its bytes changing. **Nick confirmed this reading**, so it is
+settled rather than a standing exception.
 
 **One real bug fixed there.** `tier_sidecars.py` treated any Markdown artifact
 with *any* frontmatter as self-describing and skipped it. An older artifact
