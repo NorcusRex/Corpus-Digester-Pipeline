@@ -35,7 +35,7 @@ source is drift, not a variant.
 |---|---|---|---|---|
 | `corpus-glossary.md` | 1.0 | 2026-09-25 | AI Methods / `search-project-corpus` | Vocabulary the pipeline uses: corpus, repository, tier, sidecar, index, manifest |
 | `repository-structure.md` | 2.3 | 2026-09-25 | AI Methods / `search-project-corpus` | The contract the pipeline owes the searcher, and the `_index.json` format both parse |
-| `project-manifest-format.md` | 1.3 | 2026-09-25 | AI Methods / `update-project-manifest` | Format of a real pipeline input, consumed by `claude_to_markdown.py` |
+| `project-manifest-format.md` | 1.4 | 2026-09-26 | AI Methods / `update-project-manifest` | Format of a real pipeline input, consumed by `claude_to_markdown.py` |
 
 All three are current as of the dates above.
 
@@ -58,16 +58,19 @@ came back answered on 2026-09-25. The Designer's cover note is kept verbatim at
   change follows.
 - **`corpus-glossary.md` stays at 1.0.** Unchanged and needing no action.
 
-**One defect came with it.** `project-manifest-format.md` 1.3 gives two
-different versions for itself: the header says 1.3, its *Versioning* section
-says "This document is version 1.2". The body line is the stale one on the
-Designer's own account of the sequence. Installed as received rather than
-corrected, per the rule above, and raised for the next round — see `BACKLOG.md`
-item 4.
+**One defect came with it, since fixed.** `project-manifest-format.md` 1.3 gave
+two different versions for itself — 1.3 in the header, 1.2 in the *Versioning*
+section. Sent back rather than edited locally, per the rule above, and returned
+the same day as **1.4**. The fix removes the duplicate instead of syncing it:
+the section now says the document describes `manifest_format_version` 1.0 and
+that its own version is in the header. A file that states its own version once
+cannot drift from itself. Verified on receipt that the diff is two hunks and
+nothing else moved. Cover note at
+`docs/handoffs/2026-09-25__designer-response-2-version-fix.md`.
 
-**Still true, and worth knowing when reading `project-manifest-format.md`:** the
+**Still worth knowing when reading `project-manifest-format.md`:** the
 document's version and the format's version are not the same number. The
-document is at 1.3; the format it describes is at 1.0.
+document is at 1.4; the format it describes is at 1.0.
 
 ## What is not here
 

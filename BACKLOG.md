@@ -15,9 +15,8 @@ reasoning is worth being able to find.
 | 1 | Keyword soft tier — run the audit, then rule | Nick |
 | 2 | ChatGPT export media — run the inspection | Nick |
 | 3 | `3-Reporting` stamping — rule whether it is needed | Nick |
-| 4 | One correction back to AI Methods — a version contradiction | Nick |
-| 5 | ChatGPT export media — build the fix | Item 2 |
-| 6 | Multi-word keywords — PM has ruled it in | Nobody; unscheduled |
+| 4 | ChatGPT export media — build the fix | Item 2 |
+| 5 | Multi-word keywords — PM has ruled it in | Nobody; unscheduled |
 | — | Acceptance tiers 1–4 | Out of scope — the reporting skill's job |
 
 ---
@@ -80,7 +79,7 @@ python inspect_chatgpt_assets.py "<export folder>" --report assets.txt
 ```
 
 Needed because the export format has changed across ChatGPT versions, and the
-pointer-to-file mapping should be known rather than guessed. Unblocks item 5.
+pointer-to-file mapping should be known rather than guessed. Unblocks item 4.
 
 ## 3. `3-Reporting` stamping — Decision 2
 
@@ -93,49 +92,11 @@ pass at all. That is a question about your filing habits, not about the code.
 are catalogued by companion sidecars (`tier_sidecars.py`) which leave the
 artifact byte-identical.
 
-## 4. One correction back to AI Methods
-
-**The round-trip worked.** The handoff note went over, and
-`repository-structure.md` 2.3 and `project-manifest-format.md` 1.3 came back on
-2026-09-25, both installed in `references/`. The Designer's cover note is kept
-at `docs/handoffs/2026-09-25__designer-response.md`. What was settled is
-recorded in `references/README.md`; the three findings that prompted it are
-closed below.
-
-**One thing needs to go back.** `project-manifest-format.md` 1.3 states two
-different versions for itself:
-
-| Where | Says |
-|---|---|
-| Header, line 3 | **Version 1.3** |
-| Designer's cover note | 1.3 |
-| *Versioning* section, line 81 | "This document is version **1.2**" |
-
-The body line is the stale one, on the Designer's own account of the sequence —
-1.2 was the editorial revision that exposed the bad rule, 1.3 is its
-replacement. So the fix is one line, and it belongs in the Designer's copy, not
-this one.
-
-It is worth sending rather than shrugging at, because of where it landed: the
-*Versioning* section is the part that was rewritten this round, and the rule it
-now states is that a version describes the thing it is attached to. A file
-carrying two versions of itself is the exact failure that rule exists to
-prevent. It is also the kind of defect this arrangement is least able to absorb
-— a file is the only channel between Designer and Developer, so a copy that
-misstates its own version is an unnoticed disagreement waiting to happen.
-
-**Nothing is blocked by it.** The wire format is unchanged at `1.0`, the
-pipeline reads manifests by content shape, and no code acts on either number.
-
-**What to do.** Ask AI Methods for 1.4 with the body line corrected, or batch it
-with the next change to that file. Drop the result into `references/` and tell
-me.
-
 ---
 
 # Waiting on me
 
-## 5. ChatGPT export media — build the fix
+## 4. ChatGPT export media — build the fix
 
 **Blocked on item 2.**
 
@@ -148,7 +109,7 @@ the export and the converter throws it away. This is the path covering the
 The Claude side is better placed — `render_files` already reads `file_name` and
 `file_uuid`.
 
-## 6. Multi-word keywords
+## 5. Multi-word keywords
 
 **Ruled in by Nick, unscheduled.** Real work, nobody blocked, no date.
 
@@ -232,6 +193,43 @@ spelling fix would have destroyed good output.
 Kept because the reasoning is worth finding again, not because anything is
 pending.
 
+## The shared-file versioning rule
+
+**Closed at `project-manifest-format.md` 1.4**, after two round trips and one
+defect in between.
+
+**What was wrong.** The same glossary text was reaching the pipeline stamped
+1.6, 2.3, 4.4 and 4.6 — a shared file was carrying whichever version its host
+skill bundle happened to be at. A copy's version therefore said nothing about
+its content, which is the one thing a version is for in this arrangement: a
+file is the only channel between Designer and Developer, so a version mismatch
+has to mean drift rather than a variant.
+
+**What was built here.** `references/README.md` states the rule for this side —
+a shared file carries its own version, independent of any skill that bundles
+it, every copy shows the same version, and the version changes only when the
+content does.
+
+**What came back.** The Designer replaced the rule in
+`project-manifest-format.md` rather than patching it: the document version and
+`manifest_format_version` are stated as independent, either free to move
+without the other, with the general principle that a version describes the
+thing it is attached to and nothing else.
+
+**And then broke it, once.** 1.3 stated two different versions for itself — 1.3
+in the header, 1.2 in the *Versioning* section's own first line, in the section
+that had just been rewritten. Found by reading the shipped file, sent back
+rather than edited locally, and returned as 1.4 the same day. The fix removes
+the duplicate rather than syncing it: the section now says its own version is in
+the header. Verified on receipt that the diff is two hunks and nothing else in
+the file moved.
+
+**Worth keeping for the pattern**, not the content. The defect was a stale line
+left behind by an edit, in the paragraph most about not leaving stale versions
+behind; it survived the Designer's own review and was caught by a reader on the
+other side of the channel with no stake in the wording. That is the check this
+arrangement actually has, and it worked.
+
 ## Inconsistencies between the shared reference files
 
 **All three resolved**, two by the Designer in the 2026-09-25 round and one
@@ -254,7 +252,7 @@ in the pipeline depended on the answer — it converts `1-Raw` into `2-Digested`
 and never sees a conversation or a live source — but the searcher does.
 
 **The multi-word keyword requirement vanished in the split.** Accepted and
-ruled in as pipeline work; now item 6 rather than a reference-file problem.
+ruled in as pipeline work; now item 5 rather than a reference-file problem.
 
 **51% duplication in `repository-structure.md` v2.1.** Measured here,
 independently confirmed upstream, and cut in 2.3 — *The four tiers* and
@@ -393,8 +391,8 @@ A manifest carrying `manifest_format_version`, every documented field, and
 invented keys besides is still recognised correctly. The manifest is recorded
 as a named pipeline input in the pipeline guide alongside `project_names.tsv`.
 
-That oddity is what became the versioning rule the Designer rewrote for 1.3.
-The one loose end left in it is item 4.
+That oddity is what became the versioning rule the Designer rewrote, first for
+1.3 and then for 1.4. It is closed; see *The shared-file versioning rule* below.
 
 ## Keyword weighting simplified to one question
 

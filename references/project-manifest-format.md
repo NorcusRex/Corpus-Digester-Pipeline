@@ -1,6 +1,6 @@
 # Project Manifest Format
 
-**Version 1.3**
+**Version 1.4**
 
 The format contract for a project manifest. Written by the
 `update-project-manifest` skill and read by whatever consumes it.
@@ -78,7 +78,8 @@ them.
 
 ## Versioning
 
-This document is version 1.2 and describes `manifest_format_version` **1.0**.
+This document describes `manifest_format_version` **1.0**. Its own version is
+in the header above.
 
 **The two are independent.** The document version changes whenever this file
 changes — including for wording, framing or examples. The format version
