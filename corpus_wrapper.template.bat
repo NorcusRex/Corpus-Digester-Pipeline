@@ -65,9 +65,16 @@ REM Set to 1 to recover text from scanned PDFs. Needs ocrmypdf
 REM on PATH or in OCRMYPDF_EXE; without it the step is skipped
 REM with a message. Nothing in 1-Raw is modified -- the text is
 REM cached under _ocr-cache at the corpus root, keyed on content
-REM hash, so a re-digest costs nothing. Leave empty for a corpus
-REM with no scanned material.
+REM hash, so a re-digest costs nothing. The searchable PDF is
+REM placed in 2-Digested as <name>.ocr.pdf so you can open and
+REM search the book itself. Leave empty for a corpus with no
+REM scanned material.
 set "OCR="
+
+REM Set to 1 to keep only the OCR text, not the searchable PDF.
+REM Roughly halves what OCR costs in space, and gives up the copy
+REM a reader opens.
+set "NO_OCR_PDF="
 
 REM Set to 1 to skip extracting images from PDFs. For scanned
 REM books every page image IS the page, so extraction writes the
@@ -152,6 +159,7 @@ if defined AUDIT   set "DO_AUDIT=1"
 if defined DO_AUDIT set "OPTS=%OPTS% --report-artifacts "%CORPUS_ROOT%\_rejected-keywords.md""
 if defined ARCHIVE_ONLY set "OPTS=%OPTS% --archive-only"
 if defined OCR set "OPTS=%OPTS% --ocr"
+if defined NO_OCR_PDF set "OPTS=%OPTS% --no-ocr-pdf"
 if defined NO_PDF_IMAGES set "OPTS=%OPTS% --no-pdf-images"
 
 REM A project-name map beside this wrapper overrides the pipeline's

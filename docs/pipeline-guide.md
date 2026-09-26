@@ -770,7 +770,13 @@ python ocr_pdf.py 1-Raw --cache _ocr-cache --dry-run
 
 In the per-corpus wrapper this is `OCR=1`.
 
-**`1-Raw` is never modified.** The obvious approach -- and the one a hand-rolled batch script reaches for -- is to run `ocrmypdf` over the raw tree and overwrite each file with its OCR'd version. That is safe only where `1-Raw` holds copies. By definition it holds incoming material, which for most corpora means the originals, and a pipeline that rewrites originals is one bad run away from losing them. So `ocrmypdf` writes its text to a sidecar, the text is cached, and the OCR'd PDF is thrown away. The corpus gains the text, which is the part search needs.
+**You get the searchable PDF, and `1-Raw` is still never modified.** These are not in tension, which is the point of the design.
+
+OCR produces two useful things: the text, which is what search needs, and a searchable copy of the book, which is what a person opens. Both are cached. The text goes into the Markdown; the searchable PDF is copied into `2-Digested` beside it as `<name>.ocr.pdf`, and the frontmatter records `ocr_pdf`. Since it travels to Drive with the rest of `2-Digested`, you can open the book and search it wherever the corpus is.
+
+That is what makes overwriting the original unnecessary. The obvious approach -- and the one a hand-rolled batch script reaches for -- is to run `ocrmypdf` over the raw tree and replace each file with its OCR'd version. That is safe where `1-Raw` holds copies, and wrong as a default: `1-Raw` is defined as incoming material, this pipeline is copied to corpora whose conventions differ, and a default that rewrites its own inputs is one bad run from losing them. Keeping the searchable copy in `2-Digested` gives the same artifact with none of that exposure.
+
+`--no-ocr-pdf` turns the copy off, which roughly halves what OCR costs in space, at the price of the copy a reader opens.
 
 **The cache is keyed on content hash.** It lives in `_ocr-cache` at the corpus root, is excluded from digestion, and sits outside `2-Digested` so a `--clean` rebuild does not discard it. OCR is the slowest thing the pipeline can do -- seconds per page against milliseconds for everything else -- and digestion is meant to be re-runnable. Hashing the content rather than the path means a book that is renamed, moved between corpora, or re-copied from an archive is still a hit. Editing the PDF is what invalidates it, which is the only thing that should.
 
@@ -783,6 +789,8 @@ In the per-corpus wrapper this is `OCR=1`.
 **The dependency is external and optional.** `ocrmypdf` is a program, not a Python package, invoked as a subprocess -- nothing is imported and nothing is installed by the pipeline. It is found through the `OCRMYPDF_EXE` environment variable, then on `PATH`. Without it, OCR is skipped with a message and the rest of the run proceeds exactly as before.
 
 **Run `--ocr --dry-run` first.** It lists which PDFs it judges scanned and writes nothing, including no cache. Worth doing on a handful of books before committing a large set: `--skip-text` treats a page carrying any text as done, and how that behaves on a mixed book -- scanned plates inside a text-layer PDF -- is worth seeing on a real file.
+
+**Space.** A searchable PDF is about the size of the original, so a corpus of scanned books roughly doubles: the cache holds one copy and `2-Digested` another. For a shelf of a hundred books that is a fair trade for being able to open and search them. For a much larger set, `--no-ocr-pdf` keeps only the text.
 
 **Pair it with `--no-pdf-images` for scanned material.** Every page of a scan is one full-page image, so extracting them duplicates the entire book as loose files while adding nothing searchable.
 

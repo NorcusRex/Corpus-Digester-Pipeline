@@ -304,6 +304,7 @@ def _copy_through(src: Path, dest_dir: Path, allocated: set,
 # cost more clarity than it buys.
 OCR_CACHE_DIR: Path | None = None
 EXTRACT_PDF_IMAGES: bool = True
+OCR_KEEP_PDF: bool = True
 
 _ASSET_INDEX_CACHE: dict = {}
 
@@ -501,6 +502,23 @@ def process_file(src: Path, src_root: Path, out_root: Path,
                 ocr_pages=(ocr_pdf.cached_pages(OCR_CACHE_DIR, src)
                            if OCR_CACHE_DIR else None),
                 extract_images=EXTRACT_PDF_IMAGES)
+            # The searchable PDF travels with its Markdown. It is the artifact
+            # a person opens -- a book you can search rather than a wall of
+            # extracted text -- and having it here is what makes overwriting
+            # the original in 1-Raw unnecessary.
+            if OCR_CACHE_DIR and OCR_KEEP_PDF:
+                cached = ocr_pdf.cached_pdf(OCR_CACHE_DIR, src)
+                if cached is not None:
+                    searchable = md_path.with_suffix(".ocr.pdf")
+                    try:
+                        if not (searchable.exists()
+                                and searchable.stat().st_size == cached.stat().st_size):
+                            shutil.copy2(cached, searchable)
+                        fm["ocr_pdf"] = searchable.name
+                        stats["ocr_pdf_copied"] += 1
+                    except OSError as e:
+                        print(f"  [warn] could not place searchable PDF for "
+                              f"{src.name}: {e}", file=sys.stderr)
             add_metadata.stamp_source_identity(fm, src)
             write_md(md_path, fm, body, pdf_to_markdown.to_yaml_frontmatter)
             stats["pdf"] += 1
@@ -713,6 +731,11 @@ def main() -> int:
                          "PATH or in OCRMYPDF_EXE. Nothing in 1-Raw is "
                          "modified: the text is cached, the OCR'd PDF is "
                          "discarded.")
+    ap.add_argument("--no-ocr-pdf", action="store_true",
+                    help="Do not place the searchable PDF beside the Markdown. "
+                         "By default an OCR'd book is copied into 2-Digested "
+                         "as <name>.ocr.pdf, because that is the artifact a "
+                         "reader opens. Halves the space OCR costs.")
     ap.add_argument("--ocr-jobs", type=int, default=4,
                     help="OCR processes to run at once (default 4)")
     ap.add_argument("--ocr-lang", default=None,
@@ -755,8 +778,9 @@ def main() -> int:
     subject_names = ({n.lower() for n in args.subject}
                      if args.subject else None)
 
-    global OCR_CACHE_DIR, EXTRACT_PDF_IMAGES
+    global OCR_CACHE_DIR, EXTRACT_PDF_IMAGES, OCR_KEEP_PDF
     EXTRACT_PDF_IMAGES = not args.no_pdf_images
+    OCR_KEEP_PDF = not args.no_ocr_pdf
     # The cache sits at the corpus root rather than beside the output, so it
     # survives a --clean rebuild of 2-Digested. Re-OCRing a hundred books
     # because the output tree was rebuilt is exactly what the cache is for.
@@ -840,7 +864,7 @@ def main() -> int:
             print("Checking PDFs for a text layer...")
             ocr_pdf.run_batch(
                 pdfs, OCR_CACHE_DIR, jobs=args.ocr_jobs, lang=args.ocr_lang,
-                dry_run=args.dry_run,
+                dry_run=args.dry_run, keep_pdf=OCR_KEEP_PDF,
                 log_path=corpus_root / "_ocr-problems.md")
             print()
 

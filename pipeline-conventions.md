@@ -295,12 +295,18 @@ search to find it. `likely_scanned: true` in the frontmatter says so.
 
 `--ocr` recovers the text. Three properties are deliberate.
 
-**`1-Raw` is never modified.** The obvious approach is to run `ocrmypdf` over
-the raw tree and overwrite each file. That is safe only where `1-Raw` holds
-copies, and by definition it holds incoming material, which for most corpora
-means the originals. So `ocrmypdf` writes to a sidecar, the text is cached, and
-the OCR'd PDF is discarded. The corpus gains the text, which is the part search
-needs.
+**The searchable PDF is kept; `1-Raw` is still not modified.** OCR yields two
+useful things — the text, which search needs, and a searchable copy of the
+book, which a person opens. Both are cached. The text goes into the Markdown;
+the searchable copy lands in `2-Digested` as `<name>.ocr.pdf`, recorded in the
+frontmatter as `ocr_pdf`, and travels to Drive with the rest of the tier.
+
+That is what makes overwriting the original unnecessary. Running `ocrmypdf`
+over the raw tree in place is safe where `1-Raw` holds copies and wrong as a
+default: the tier is defined as incoming material, the pipeline is copied to
+corpora whose conventions differ, and a default that rewrites its own inputs
+is one bad run from losing them. `--no-ocr-pdf` drops the copy where space
+matters more than convenience.
 
 **The cache is keyed on content hash, in `_ocr-cache` at the corpus root.** OCR
 is the slowest thing the pipeline can do, seconds per page against milliseconds

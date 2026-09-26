@@ -19,9 +19,16 @@ version. That is safe only when `1-Raw` holds copies. By definition it holds
 incoming material, which for most corpora means the originals, and a pipeline
 that rewrites the originals is one bad run away from losing them.
 
-So nothing here modifies the source. `ocrmypdf` writes its text to a sidecar,
-the text is cached under the corpus root, and the OCR'd PDF itself is
-discarded. What the corpus gains is the text, which is the part search needs.
+So nothing here modifies the source. `ocrmypdf` writes its text to a sidecar
+and a searchable PDF, both of which are cached under the corpus root, and the
+original is left exactly as it was.
+
+**The searchable PDF is kept, not thrown away.** It is the artifact a person
+actually wants out of OCR -- a book you can open and search rather than a wall
+of extracted text -- so the converter copies it into `2-Digested` beside the
+Markdown as `<name>.ocr.pdf`. That is what makes overwriting the original
+unnecessary: you get the searchable copy either way, and `1-Raw` still holds
+what arrived.
 
 THE CACHE EARNS ITS PLACE
 
@@ -157,10 +164,19 @@ def looks_scanned(path: Path) -> bool:
     return chars < CHARS_PER_PAGE_FLOOR * pages
 
 
-def cache_file(cache_dir: Path, digest: str) -> Path:
+def cache_file(cache_dir: Path, digest: str, suffix: str = ".txt") -> Path:
     # Two-character prefix directory: a flat folder of ten thousand files is
     # slow to list on Windows and unpleasant to look at.
-    return cache_dir / digest[:2] / f"{digest}.txt"
+    return cache_dir / digest[:2] / f"{digest}{suffix}"
+
+
+def cached_pdf(cache_dir: Path, src: Path) -> Path | None:
+    """The cached searchable PDF for `src`, or None if there is not one."""
+    try:
+        target = cache_file(cache_dir, file_sha256(src), ".pdf")
+    except OSError:
+        return None
+    return target if target.is_file() else None
 
 
 def cached_text(cache_dir: Path, src: Path) -> str | None:
@@ -192,7 +208,7 @@ def cached_pages(cache_dir: Path, src: Path) -> dict[int, str] | None:
 
 
 def ocr_one(exe: str, src: Path, cache_dir: Path, lang: str | None,
-            timeout: int) -> tuple[Path, str, str]:
+            timeout: int, keep_pdf: bool = True) -> tuple[Path, str, str]:
     """OCR one PDF into the cache. Returns (src, status, detail).
 
     status is one of: cached, ocred, no-text, failed.
@@ -203,14 +219,13 @@ def ocr_one(exe: str, src: Path, cache_dir: Path, lang: str | None,
         return (src, "failed", f"unreadable: {e}")
 
     target = cache_file(cache_dir, digest)
-    if target.is_file():
+    pdf_target = cache_file(cache_dir, digest, ".pdf")
+    if target.is_file() and (pdf_target.is_file() or not keep_pdf):
         return (src, "cached", "")
 
     with tempfile.TemporaryDirectory(prefix="ocr_") as tmp:
         tmpdir = Path(tmp)
         sidecar = tmpdir / "text.txt"
-        # The OCR'd PDF is written and thrown away. We want the text; keeping
-        # a second copy of every book is not what this is for.
         out_pdf = tmpdir / "out.pdf"
         cmd = [exe, "--skip-text", "--sidecar", str(sidecar),
                "--output-type", "pdf"]
@@ -237,23 +252,31 @@ def ocr_one(exe: str, src: Path, cache_dir: Path, lang: str | None,
         except OSError as e:
             return (src, "failed", f"could not read sidecar: {e}")
 
-    if not text.strip():
-        # Recorded rather than cached: an empty result is usually a bad scan,
-        # and caching it would mean never trying again after it is rescanned.
-        return (src, "no-text", "OCR produced no text")
+        if not text.strip():
+            # Recorded rather than cached: an empty result is usually a bad
+            # scan, and caching it would mean never trying again once the
+            # book is rescanned.
+            return (src, "no-text", "OCR produced no text")
 
-    try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(text, encoding="utf-8")
-    except OSError as e:
-        return (src, "failed", f"could not write cache: {e}")
+        # Both artifacts are written while the temporary directory still
+        # exists -- the text for search, the searchable PDF for a reader.
+        # Everything below must stay inside this `with`, or out_pdf is gone
+        # before it can be copied.
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8")
+            if keep_pdf and out_pdf.is_file():
+                shutil.copy2(out_pdf, pdf_target)
+        except OSError as e:
+            return (src, "failed", f"could not write cache: {e}")
+
     return (src, "ocred", f"{len(text):,} chars")
 
 
 def run_batch(pdfs: list[Path], cache_dir: Path, jobs: int = 4,
               lang: str | None = None, dry_run: bool = False,
               timeout: int = 3600, log_path: Path | None = None,
-              verbose: bool = True) -> dict:
+              verbose: bool = True, keep_pdf: bool = True) -> dict:
     """OCR every scanned PDF in `pdfs` into `cache_dir`. Returns a stats dict."""
     stats = {"considered": len(pdfs), "scanned": 0, "cached": 0, "ocred": 0,
              "no_text": 0, "failed": 0, "skipped_has_text": 0}
@@ -294,7 +317,8 @@ def run_batch(pdfs: list[Path], cache_dir: Path, jobs: int = 4,
     cache_dir.mkdir(parents=True, exist_ok=True)
     failures: list[str] = []
     with ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
-        futures = {pool.submit(ocr_one, exe, p, cache_dir, lang, timeout): p
+        futures = {pool.submit(ocr_one, exe, p, cache_dir, lang, timeout,
+                               keep_pdf): p
                    for p in needs}
         done = 0
         for fut in as_completed(futures):
@@ -340,6 +364,9 @@ def main() -> int:
                     help="Tesseract language code passed through as -l")
     ap.add_argument("--timeout", type=int, default=3600,
                     help="Seconds before one file is given up on (default 3600)")
+    ap.add_argument("--no-keep-pdf", action="store_true",
+                    help="Cache only the text, not the searchable PDF. Halves "
+                         "the cache, and gives up the copy a reader opens.")
     ap.add_argument("--log", default=None, help="Write failures to this file")
     ap.add_argument("--dry-run", action="store_true",
                     help="List what would be OCR'd, change nothing")
@@ -359,7 +386,8 @@ def main() -> int:
 
     stats = run_batch(pdfs, cache_dir, jobs=args.jobs, lang=args.lang,
                       dry_run=args.dry_run, timeout=args.timeout,
-                      log_path=Path(args.log) if args.log else None)
+                      log_path=Path(args.log) if args.log else None,
+                      keep_pdf=not args.no_keep_pdf)
     print()
     for k in ("considered", "skipped_has_text", "scanned", "cached", "ocred",
               "no_text", "failed"):
