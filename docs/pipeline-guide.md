@@ -803,6 +803,22 @@ In the wrapper, set `ARCHIVE_ONLY=1`. That also skips the `4-Canon` catalogue (a
 
 The archive corpus is a corpus in the ordinary sense: it has a `_Tools` folder, a wrapper, a configuration, and its own digest run. It simply has no project producing into it.
 
+## CHATGPT ASSETS (chatgpt_assets.py)
+
+The converter used to write `[image_asset_pointer content omitted]` and throw the pointer away, so an export carrying 1,424 asset files produced Markdown referring to none of them. It now resolves them. The pointer handling was written against a measured export (`docs/findings/`), and three of the facts it depends on would have been guessed wrong:
+
+**There are two pointer schemes.** `file-service://file-<id>` for images and uploads, `sediment://file_<32hex>` for audio and voice mode -- hyphen against underscore, mixed-case alphanumeric against lowercase hex. A resolver written for the first silently misses every audio and voice asset.
+
+**Pointers nest.** `real_time_user_audio_video_asset_pointer` holds its pointers in `audio_asset_pointer`, `frames_asset_pointers` (a list) and `video_container_asset_pointer`. Reading a top-level `asset_pointer` key finds nothing in those, so the resolver walks each part recursively instead.
+
+**A part's `content_type` is not a media type.** It is the name of the part -- the literal string `image_asset_pointer` -- so it cannot supply an extension. 114 files in the export have none, and without one nothing renders them. Extensions come from the source filename where there is one, a real `mime_type` where an attachment supplies one, and otherwise from the file's first bytes.
+
+Resolution is one folder scan building an id-to-path index, cached per export root so chunked exports do not rebuild it. Matched files are copied into `<stem>_media/` beside the conversation and linked; the frontmatter gains `assets_linked` and `assets_missing`.
+
+**What cannot be resolved, and why it is not a bug.** ChatGPT does not export the bytes of files you uploaded. The export carries an attachment's name, size and MIME type; it does not carry the attachment. Those become a named marker -- `- The Plan.pdf (application/pdf) — not included in the export` -- rather than silence, so a reader learns a file was there and what it was called. Uploaded attachments also hang off `message.metadata`, not `content.parts`, so the converter never saw them at all before this.
+
+**Audio transcriptions were never lost.** An `audio_transcription` part carries a `text` field, which the converter has always used, so spoken content was already in the output. Only the audio files themselves were missing.
+
 ## SPLITTING AN EXPORT BEFORE CONVERSION (split_export.py)
 
 The two-corpus flow above converts every conversation twice: once in the archive to make project folders, once in the corpus that keeps it. `split_export.py` removes the first conversion by making the folders without converting anything.
@@ -837,7 +853,7 @@ No archive corpus, no `--archive-only` run, and each corpus's `1-Raw` holds real
 
 **`_ungrouped/`** holds conversations belonging to no project -- older chats from before projects existed, and ones never moved into one. It is a selectable folder like any other, so nothing is silently unreachable. It carries an empty `projects/` folder because `is_claude_export` requires one; without it the split is not recognised as an export at all and its conversations.json falls through to a sidecar.
 
-**Per source, one writer.** Claude is implemented. ChatGPT is not: it carries real media files and the way exports reference them has changed across versions, so the routing needs `inspect_chatgpt_assets.py` run against a real export first -- until then the script refuses rather than guesses. Evernote needs no writer at all: its export is already one HTML file per note, in whatever folders you chose at export time, so there is no bundle to split.
+**Per source, one writer.** Claude groups by manifest and has no media -- its export lists attached files by name without their bytes. ChatGPT groups by `conversation_template_id` and does have media, which follows its conversation into the right split so each project export carries only the files its own conversations reference. Evernote needs no writer at all: its export is already one HTML file per note, in whatever folders you chose at export time, so there is no bundle to split.
 
 **It converts, digests, indexes and deletes nothing.** It reads an export and writes copies; the original is never touched. Re-running replaces its own output rather than merging into it, so a conversation deleted upstream does not survive in a split. Exit 1 flags an empty split or a manifest naming conversations the export does not contain.
 

@@ -43,11 +43,14 @@ manifests beside the conversations; ChatGPT's is a field on each conversation.
 So each gets its own writer, and the entry point dispatches on what the folder
 looks like.
 
-  Claude   -- implemented here.
-  ChatGPT  -- not yet. It carries real media files, and how an export
-              references them has changed across versions, so the routing
-              needs `inspect_chatgpt_assets.py` run against a real export
-              first. Until then this script refuses rather than guesses.
+  Claude   -- implemented here. No media: the export lists attached files
+              by name and does not include their bytes.
+  ChatGPT  -- implemented here, including media. Its grouping key is
+              `conversation_template_id` on each conversation rather than a
+              manifest, and it has real asset files that must follow their
+              conversation into the right split. Which files those are is
+              resolved through `chatgpt_assets`, whose pointer handling was
+              written against a measured export rather than guessed.
   Evernote -- not applicable. An Evernote export is already one HTML file per
               note in whatever folders you chose at export time, so there is
               no bundle to split. Those files go straight into `1-Raw`.
@@ -84,7 +87,18 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
+import chatgpt_assets  # noqa: E402
+import chatgpt_to_markdown as g2m  # noqa: E402
 import claude_to_markdown as c2m  # noqa: E402
+
+# Export-level files that belong in every split: account settings and the
+# like, small and identical everywhere, the same reasoning as users.json on
+# the Claude side.
+CHATGPT_AUX = {
+    "user.json", "user_settings.json", "export_manifest.json",
+    "shared_conversations.json", "message_feedback.json",
+    "model_comparisons.json", "chat.html",
+}
 
 UNGROUPED_DIR = "_ungrouped"
 
@@ -303,6 +317,110 @@ def claude_split_memories(memories, pid: str | None):
 
 
 # ---------------------------------------------------------------------------
+# ChatGPT
+# ---------------------------------------------------------------------------
+
+def chatgpt_conversation_ids(conv: dict) -> list[str]:
+    """Every asset id this conversation references, at any depth.
+
+    Both kinds: pointer URLs in message parts, and the bare ids of uploaded
+    attachments. The second set is mostly not on disk, but the ones that are
+    must travel with the conversation rather than being left in the export.
+    """
+    mapping = conv.get("mapping") or {}
+    ids = chatgpt_assets.pointer_ids(mapping)
+    seen = set(ids)
+    return ids + [i for i in chatgpt_assets.attachment_ids(mapping)
+                  if not (i in seen or seen.add(i))]
+
+
+def split_chatgpt(export_dir: Path, out_dir: Path, dry_run: bool,
+                  only: str | None) -> int:
+    conv_path = export_dir / "conversations.json"
+    conversations = read_json(conv_path)
+    if not isinstance(conversations, list):
+        print("ERROR: conversations.json is missing or is not a list.",
+              file=sys.stderr)
+        return 2
+
+    index = chatgpt_assets.AssetIndex(export_dir)
+    print(f"{len(conversations):,} conversation(s) in the export.")
+    print(f"asset index: {len(index.by_id):,} id(s) from "
+          f"{index.files_scanned:,} file(s).")
+    print()
+
+    buckets: dict[str, list] = defaultdict(list)
+    for conv in conversations:
+        if not isinstance(conv, dict):
+            continue
+        # subdir_for_template rather than pick_subdir: the latter reuses
+        # folders already on disk, which is right when writing into an
+        # existing digested tree and wrong here, where the output is rebuilt.
+        tid = conv.get("conversation_template_id") or ""
+        key = g2m.subdir_for_template(tid) if tid else UNGROUPED_DIR
+        buckets[key].append(conv)
+
+    aux = [f for f in sorted(export_dir.iterdir())
+           if f.is_file() and f.name.lower() in CHATGPT_AUX]
+
+    findings = 0
+    written = 0
+    for key, convs in sorted(buckets.items(),
+                             key=lambda kv: (kv[0] == UNGROUPED_DIR, kv[0])):
+        if only and key != only:
+            continue
+        dest = out_dir / key
+        if not dry_run:
+            if dest.exists():
+                shutil.rmtree(dest)
+            dest.mkdir(parents=True, exist_ok=True)
+
+        write_json(dest / "conversations.json", convs, dry_run)
+        for f in aux:
+            if not dry_run:
+                shutil.copy2(f, dest / f.name)
+
+        # Assets follow their conversation. Each split therefore holds only
+        # the files its own conversations reference -- the same boundary the
+        # conversations themselves get, applied to the media.
+        wanted: dict[str, Path] = {}
+        missing = 0
+        for conv in convs:
+            for aid in chatgpt_conversation_ids(conv):
+                src = index.resolve(aid)
+                if src is None:
+                    missing += 1
+                else:
+                    wanted[src.name] = src
+        if not dry_run:
+            for name, src in wanted.items():
+                try:
+                    shutil.copy2(src, dest / name)
+                except OSError as e:
+                    print(f"  [warn] could not copy {name}: {e}",
+                          file=sys.stderr)
+
+        note = ""
+        if missing:
+            # Not a fault: ChatGPT exports the reference to an uploaded file,
+            # not the file. The converter names them in the output.
+            note = f", {missing} reference(s) with no file in the export"
+        if not convs:
+            findings += 1
+            note += "  [!] empty"
+        print(f"  {key}/  {len(convs):,} conversation(s), "
+              f"{len(wanted):,} asset file(s){note}")
+        written += 1
+
+    print()
+    print(f"{written} split(s) {'previewed' if dry_run else 'written'} "
+          f"to {out_dir}")
+    if dry_run:
+        print("(dry run -- nothing was written)")
+    return 1 if findings else 0
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -314,8 +432,10 @@ def main() -> int:
     ap.add_argument("out_dir", help="Where the per-project exports are written")
     ap.add_argument("--dry-run", action="store_true",
                     help="Show what would be written, change nothing")
-    ap.add_argument("--only", default=None, metavar="PROJECT_UUID",
-                    help="Split out a single project and nothing else")
+    ap.add_argument("--only", default=None, metavar="PROJECT",
+                    help="Split out one project and nothing else. A project "
+                         "uuid for Claude; the folder name "
+                         "(project_g-p-...) for ChatGPT.")
     args = ap.parse_args()
 
     export_dir = Path(args.export_dir).expanduser()
@@ -332,19 +452,14 @@ def main() -> int:
         return split_claude(export_dir, out_dir, args.dry_run, args.only)
 
     if (export_dir / "conversations.json").is_file():
-        print("ERROR: this looks like a ChatGPT export, which has no writer "
-              "yet.\n"
-              "       Its media routing depends on how the export references "
-              "assets,\n"
-              "       which has changed across versions. Run "
-              "inspect_chatgpt_assets.py\n"
-              "       against it first.", file=sys.stderr)
-        return 2
+        print(f"ChatGPT export: {export_dir}")
+        return split_chatgpt(export_dir, out_dir, args.dry_run, args.only)
 
     print(f"ERROR: {export_dir} does not look like an export this script "
           f"can split.\n"
           f"       Expected a Claude export (conversations.json, users.json, "
-          f"projects/).", file=sys.stderr)
+          f"projects/)\n"
+          f"       or a ChatGPT export (conversations.json).", file=sys.stderr)
     return 2
 
 

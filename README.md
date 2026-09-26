@@ -68,6 +68,7 @@ calls everything in order. Copy `corpus_wrapper.template.bat` into a corpus's
 | `sync_subset.py` | Mirrors a selected subset of digested conversations |
 | `subset_inventory.py` | Reports what a digested archive offers for selection, and what nothing selects |
 | `split_export.py` | Splits an AI export into per-project exports before any conversion |
+| `chatgpt_assets.py` | Resolves a ChatGPT export's asset pointers to the files beside it |
 | `inspect_chatgpt_assets.py` | Reports how an export references its media |
 | `*_to_markdown.py` | The converters |
 

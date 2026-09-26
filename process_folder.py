@@ -53,6 +53,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 import docx_to_markdown        # noqa: E402
 import xlsx_to_markdown        # noqa: E402
 import chatgpt_to_markdown     # noqa: E402
+import chatgpt_assets          # noqa: E402
 import claude_to_markdown      # noqa: E402
 import rtf_to_markdown         # noqa: E402
 import html_to_markdown        # noqa: E402
@@ -289,6 +290,28 @@ def _copy_through(src: Path, dest_dir: Path, allocated: set,
     return f"{kind} (copied)"
 
 
+_ASSET_INDEX_CACHE: dict = {}
+
+
+def _chatgpt_asset_index(export_root: Path):
+    """One AssetIndex per export folder, built on first use.
+
+    Chunked exports (conversations-000.json, -001.json, ...) share a root, and
+    the scan walks a folder holding on the order of a thousand asset files, so
+    rebuilding it per chunk would be the slowest thing in the run.
+    """
+    key = export_root.resolve()
+    if key not in _ASSET_INDEX_CACHE:
+        idx = chatgpt_assets.AssetIndex(key)
+        _ASSET_INDEX_CACHE[key] = idx
+        if idx.files_scanned:
+            print(f"  asset index: {len(idx.by_id):,} id(s) from "
+                  f"{idx.files_scanned:,} file(s)"
+                  + (f", {idx.files_without_id:,} carry no id"
+                     if idx.files_without_id else ""))
+    return _ASSET_INDEX_CACHE[key]
+
+
 def _corpus_relative(src: Path, src_root: Path, corpus_root: Path | None) -> str:
     """Path to `src` relative to the corpus root, with forward slashes.
 
@@ -504,10 +527,18 @@ def process_file(src: Path, src_root: Path, out_root: Path,
                 data = json.load(f)
             if isinstance(data, dict):
                 data = data.get("conversations") or [data]
+            # The export's asset files sit beside conversations.json. Index
+            # them once per export root: chunked exports share a root, and the
+            # scan is over a folder that can hold thousands of files.
+            asset_index = _chatgpt_asset_index(src.parent)
+
             count = 0
+            resolved = unresolved = 0
             for conv in data:
+                sink = chatgpt_assets.AssetSink(asset_index)
                 try:
-                    fm, body, dstr = chatgpt_to_markdown.render_conversation(conv)
+                    fm, body, dstr = chatgpt_to_markdown.render_conversation(
+                        conv, sink=sink)
                 except Exception as e:  # noqa: BLE001
                     print(f"  [warn] one conversation failed: {e}", file=sys.stderr)
                     continue
@@ -521,10 +552,22 @@ def process_file(src: Path, src_root: Path, out_root: Path,
                 target_dir = sub_out / subdir if subdir else sub_out
                 target_dir.mkdir(parents=True, exist_ok=True)
                 out_file = claim_output_path(target_dir / f"{dstr}__{slug}.md", allocated)
+                # Assets are placed only now: the media folder is named after
+                # the Markdown file, and that name is not settled until
+                # claim_output_path has resolved any collision.
+                body = sink.flush(out_file, body)
+                if sink.resolved:
+                    fm["assets_linked"] = sink.resolved
+                if sink.unresolved:
+                    fm["assets_missing"] = sink.unresolved
                 write_md(out_file, fm, body, chatgpt_to_markdown.to_yaml_frontmatter)
+                resolved += sink.resolved
+                unresolved += sink.unresolved
                 count += 1
             stats["chatgpt"] += 1
             stats["chatgpt_conversations"] += count
+            stats["chatgpt_assets_linked"] += resolved
+            stats["chatgpt_assets_missing"] += unresolved
             return f"chatgpt ({count} conversations)"
 
         if suffix == ".md":

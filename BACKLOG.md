@@ -13,12 +13,10 @@ reasoning is worth being able to find.
 | # | Item | Blocked on |
 |---|---|---|
 | 1 | Keyword soft tier — run the audit, then rule | Nick |
-| 2 | ChatGPT export media — run the inspection | Nick |
-| 3 | `3-Reporting` stamping — rule whether it is needed | Nick |
-| 4 | Carry the corpora report to AI Methods | Nick |
-| 5 | ChatGPT export media — build the fix | Item 2 |
-| 6 | Multi-word keywords — PM has ruled it in | Nobody; unscheduled |
-| 7 | Index or digest the `RPG` library | Nobody; someday |
+| 2 | `3-Reporting` stamping — rule whether it is needed | Nick |
+| 3 | Carry the corpora report to AI Methods | Nick |
+| 4 | Multi-word keywords — PM has ruled it in | Nobody; unscheduled |
+| 5 | Index or digest the `RPG` library | Nobody; someday |
 | — | Acceptance tiers 1–4 | Out of scope — the reporting skill's job |
 
 ---
@@ -69,21 +67,7 @@ dictionary was "earning its place" was made about the vowel-ratio version and
 was not revisited after that version was replaced; it was also circular, since
 the dictionary passed to that test was built from the test's own answer key.
 
-## 2. ChatGPT export media — run the inspection
-
-Run `inspect_chatgpt_assets.py` against one real ChatGPT export and paste the
-output. It is read-only and prints no conversation text — only content types,
-the keys each carries, sample pointer identifiers, and whether those match
-files on disk.
-
-```
-python inspect_chatgpt_assets.py "<export folder>" --report assets.txt
-```
-
-Needed because the export format has changed across ChatGPT versions, and the
-pointer-to-file mapping should be known rather than guessed. Unblocks item 5.
-
-## 3. `3-Reporting` stamping — Decision 2
+## 2. `3-Reporting` stamping — Decision 2
 
 May be unnecessary. The `write-report` skill now writes frontmatter in the same
 format, so reports arrive already stamped. The open question is whether enough
@@ -94,7 +78,7 @@ pass at all. That is a question about your filing habits, not about the code.
 are catalogued by companion sidecars (`tier_sidecars.py`) which leave the
 artifact byte-identical.
 
-## 4. Carry the corpora report to AI Methods
+## 3. Carry the corpora report to AI Methods
 
 ```
 docs/handoffs/2026-09-25-1951__reference-and-production-corpora.md
@@ -126,22 +110,12 @@ side — each corpus is simply digested, with no cross-corpus mirroring at all.
 
 ---
 
-# Waiting on me
+# Unscheduled
 
-## 5. ChatGPT export media — build the fix
+Nothing is waiting on me. Both items below are real work that Nick has ruled
+in or set aside, with no date and nobody blocked.
 
-**Blocked on item 2.**
-
-`chatgpt_to_markdown.extract_text` discards the multimodal content dict,
-emitting `[<content_type> content omitted]` and dropping the `asset_pointer`
-field that sits in it. The link between a conversation and its images exists in
-the export and the converter throws it away. This is the path covering the
-1,446 uncarried files.
-
-The Claude side is better placed — `render_files` already reads `file_name` and
-`file_uuid`.
-
-## 6. Multi-word keywords
+## 4. Multi-word keywords
 
 **Ruled in by Nick, unscheduled.** Real work, nobody blocked, no date.
 
@@ -167,7 +141,7 @@ and keep both where both earn a place.
 failure that started this — that was conjunctive queries and searching in the
 wrong vocabulary, both on the searcher's side.
 
-## 7. Index or digest the `RPG` library
+## 5. Index or digest the `RPG` library
 
 **Nick's, deferred to "some day".** No date, nobody blocked.
 
@@ -247,6 +221,49 @@ spelling fix would have destroyed good output.
 Kept because the reasoning is worth finding again, not because anything is
 pending.
 
+## ChatGPT assets, resolved against a measured export
+
+**Closed, both the inspection and the build.** Nick ran
+`inspect_chatgpt_assets.py` against the 2026-04-29 export — the last one,
+since ChatGPT is no longer in use, so its format is permanent rather than a
+moving target. The output is kept, redacted, in `docs/findings/`.
+
+Three facts it settled that would otherwise have been guessed wrong:
+
+**Two pointer schemes, not one.** `file-service://file-<id>` for images and
+uploads, `sediment://file_<32hex>` for audio and voice mode — hyphen against
+underscore, mixed-case alphanumeric against lowercase hex. A resolver written
+for the first would have silently missed 276 audio and 275 voice pointers.
+This is exactly why the build waited on the measurement.
+
+**Pointers nest.** `real_time_user_audio_video_asset_pointer` holds its
+pointers inside `audio_asset_pointer`, `frames_asset_pointers` and
+`video_container_asset_pointer`. The resolver walks each part recursively
+rather than reading known keys, since the nesting keys are not stable across
+versions.
+
+**A part's `content_type` is the part's name, not a media type** — the literal
+string `image_asset_pointer`. So it cannot supply an extension, and 114 files
+have none, which matters because nothing renders an extensionless image.
+Found by testing: the first version confidently produced `.bin`. Extensions
+now come from the source filename, then a real `mime_type`, then the file's
+first bytes.
+
+**What cannot be recovered.** ChatGPT does not export the bytes of files you
+uploaded. Two PDFs sit on disk against attachment entries naming several, and
+every unmatched sample was an attachment id. Those become a named marker
+carrying the filename and MIME type rather than silence. Attachments also hang
+off `message.metadata` rather than `content.parts`, so nothing saw them at all
+before this.
+
+**A correction to the premise.** The old "1,446 uncarried files" figure was
+never fully carryable. What exists is 1,424 files on disk, 1,417 addressable
+by an id in their filename.
+
+**And one thing that was never broken.** `audio_transcription` parts carry
+`text`, which the converter has always used, so 551 spoken passages were
+already in the output. Only the audio files themselves were missing.
+
 ## The export is split before conversion, not after
 
 **Built for Claude as `split_export.py`.** Nick's question — why can't the
@@ -278,10 +295,12 @@ Silent, and exactly the class of failure this round has been about. The
 splitter now always creates `projects/`, empty where there is nothing to put
 in it.
 
-**ChatGPT's writer waits on item 2.** It carries real media and the reference
-format has moved across versions, so the routing needs the asset inspection
-first. The script refuses rather than guessing. Evernote needs no writer: its
-export is already one HTML file per note.
+**ChatGPT's writer is built too**, media included: each split carries only the
+asset files its own conversations reference. A second bug found in testing —
+the splitter collected pointer URLs but not uploaded-attachment ids, which are
+bare rather than URL-shaped, so an attachment that *was* on disk would have
+been left behind. Evernote needs no writer: its export is already one HTML
+file per note.
 
 ## The archive run does work nobody reads
 
@@ -424,7 +443,7 @@ in the pipeline depended on the answer — it converts `1-Raw` into `2-Digested`
 and never sees a conversation or a live source — but the searcher does.
 
 **The multi-word keyword requirement vanished in the split.** Accepted and
-ruled in as pipeline work; now item 6 rather than a reference-file problem.
+ruled in as pipeline work; now item 4 rather than a reference-file problem.
 
 **51% duplication in `repository-structure.md` v2.1.** Measured here,
 independently confirmed upstream, and cut in 2.3 — *The four tiers* and
