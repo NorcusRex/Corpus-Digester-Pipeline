@@ -15,8 +15,10 @@ reasoning is worth being able to find.
 | 1 | Keyword soft tier — run the audit, then rule | Nick |
 | 2 | ChatGPT export media — run the inspection | Nick |
 | 3 | `3-Reporting` stamping — rule whether it is needed | Nick |
-| 4 | ChatGPT export media — build the fix | Item 2 |
-| 5 | Multi-word keywords — PM has ruled it in | Nobody; unscheduled |
+| 4 | Carry the corpora report to AI Methods | Nick |
+| 5 | ChatGPT export media — build the fix | Item 2 |
+| 6 | Multi-word keywords — PM has ruled it in | Nobody; unscheduled |
+| 7 | Index or digest the `RPG` library | Nobody; someday |
 | — | Acceptance tiers 1–4 | Out of scope — the reporting skill's job |
 
 ---
@@ -79,7 +81,7 @@ python inspect_chatgpt_assets.py "<export folder>" --report assets.txt
 ```
 
 Needed because the export format has changed across ChatGPT versions, and the
-pointer-to-file mapping should be known rather than guessed. Unblocks item 4.
+pointer-to-file mapping should be known rather than guessed. Unblocks item 5.
 
 ## 3. `3-Reporting` stamping — Decision 2
 
@@ -92,11 +94,41 @@ pass at all. That is a question about your filing habits, not about the code.
 are catalogued by companion sidecars (`tier_sidecars.py`) which leave the
 artifact byte-identical.
 
+## 4. Carry the corpora report to AI Methods
+
+```
+docs/handoffs/2026-09-25-1951__reference-and-production-corpora.md
+```
+
+On the branch, not on `main`. It reports the decision to federate — each
+archived project stays its own corpus and a project agent reaches across
+several — and the two corpus kinds that follow, Production with four tiers and
+Reference with two.
+
+**Three things for the Designer**, all on their side of the line:
+
+1. `repository-structure.md`'s four-tier root check has to become the
+   *Production*-corpus check, or `search-project-corpus` will reject every
+   Reference corpus as an error. Which shared file carries the notion of corpus
+   kind is theirs to decide.
+2. The search requirement you accepted — per-corpus exhaustive search,
+   corpus-labelled results, no global ranking — needs to land somewhere
+   binding, because it is the kind of constraint that gets optimised away by
+   someone reasonably trying to make the skill tidier.
+3. One open question is genuinely theirs to answer: whether the Drive connector
+   can search several roots well. That is the only dependency that could still
+   argue against federation.
+
+`search-google-drive` is named in the report as an intention, not a spec.
+
+**Nothing here blocks the pipeline.** Federation is the cheaper option on this
+side — each corpus is simply digested, with no cross-corpus mirroring at all.
+
 ---
 
 # Waiting on me
 
-## 4. ChatGPT export media — build the fix
+## 5. ChatGPT export media — build the fix
 
 **Blocked on item 2.**
 
@@ -109,7 +141,7 @@ the export and the converter throws it away. This is the path covering the
 The Claude side is better placed — `render_files` already reads `file_name` and
 `file_uuid`.
 
-## 5. Multi-word keywords
+## 6. Multi-word keywords
 
 **Ruled in by Nick, unscheduled.** Real work, nobody blocked, no date.
 
@@ -134,6 +166,28 @@ and keep both where both earn a place.
 **What it is worth.** Better browsing. It would not have prevented the retrieval
 failure that started this — that was conjunctive queries and searching in the
 wrong vocabulary, both on the searcher's side.
+
+## 7. Index or digest the `RPG` library
+
+**Nick's, deferred to "some day".** No date, nobody blocked.
+
+The library is very large, mostly PDFs, with no corpus structure and no index.
+Two depths, and they are not the same job.
+
+**Index in place.** `tier_sidecars.py` already writes a catalogue record beside
+a file it must not modify — that is how `4-Canon` works. Pointed at the library
+it would leave every PDF byte-identical and produce a findable catalogue. The
+limitation is real: it extracts text only from formats it reads cheaply, so
+PDFs would get keywords from filename and path alone. Findable by title, not by
+content. Wiring in `pdf_to_markdown.py`'s extraction is what would change that.
+
+**Actually mine it.** Nick's own framing, and his estimate of the cost: many of
+the games are not OCR'd, so this means OCR across a large collection and
+"tremendous work". Nothing is proposed.
+
+The reason to keep the distinction visible is that the first is a day and the
+second is a project, and they are easy to conflate when the phrase is "digest
+the RPG folder".
 
 ---
 
@@ -252,7 +306,7 @@ in the pipeline depended on the answer — it converts `1-Raw` into `2-Digested`
 and never sees a conversation or a live source — but the searcher does.
 
 **The multi-word keyword requirement vanished in the split.** Accepted and
-ruled in as pipeline work; now item 5 rather than a reference-file problem.
+ruled in as pipeline work; now item 6 rather than a reference-file problem.
 
 **51% duplication in `repository-structure.md` v2.1.** Measured here,
 independently confirmed upstream, and cut in 2.3 — *The four tiers* and
