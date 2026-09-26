@@ -16,8 +16,7 @@ reasoning is worth being able to find.
 | 2 | Read the rejected-keyword report after the first digest | Nick |
 | 3 | Review the Drive collision report, then delete the Sheets | Nick |
 | 4 | Choose which books go in the RPG search library | Nick |
-| 5 | Does `3-Reporting` belong in the GitHub canon repo? | Nick; never answered |
-| 6 | Multi-word keywords | Nick and Claude, after the first digest |
+| 5 | Multi-word keywords | Nick and Claude, after the first digest |
 | — | Acceptance tiers 1–4 | Out of scope — the reporting skill's job |
 
 ---
@@ -150,22 +149,11 @@ known fault, and one only a real `ocrmypdf` can answer.
 **What remains here is yours, not the code's:** choosing which books go in
 `1-Raw`.
 
-## 5. Does `3-Reporting` belong in the GitHub canon repo?
-
-**Never answered.** Inherited from the pipeline's first conversation, where
-it is recorded as Indeterminate: the plan is a GitHub repository for
-`4-Canon`, you raised including `3-Reporting`, that chat argued against it on
-the grounds that pipeline-generated content makes noisy commits, and you did
-not respond either way.
-
-Surfacing it rather than letting the non-answer harden into a decision.
-Nothing depends on it yet.
-
 ---
 
 # Joint
 
-## 6. Multi-word keywords
+## 5. Multi-word keywords
 
 **Ruled in by Nick. Nick and Claude together, after the first digest.**
 
@@ -290,6 +278,21 @@ while looking finished. Completeness is now the test.
 
 **The audit report is on by default.** `AUDIT=1` in the wrapper, because it
 costs nothing and forgetting the flag was the only obstacle to item 1.
+
+## `3-Reporting` stays out of the GitHub canon repo
+
+**Nick's ruling: no.** Answered 2026-09-26, closing a question open since the
+pipeline's first conversation and recorded there as Indeterminate — that chat
+argued against including it, on the grounds that pipeline-generated content
+makes noisy commits, and Nick had not responded either way.
+
+Kept because a non-answer that hardens into a decision is indistinguishable
+from a decision until someone asks. This one was asked and answered, so the
+record now says which it is.
+
+`4-Canon` in a GitHub repository remains the plan. Nothing in the pipeline
+changes: it has never written to `4-Canon` and does not write to a repository
+at all.
 
 ## OCR is a pipeline pass now
 
@@ -556,7 +559,7 @@ in the pipeline depended on the answer — it converts `1-Raw` into `2-Digested`
 and never sees a conversation or a live source — but the searcher does.
 
 **The multi-word keyword requirement vanished in the split.** Accepted and
-ruled in as pipeline work; now item 2 rather than a reference-file problem.
+ruled in as pipeline work; now item 5 rather than a reference-file problem.
 
 **51% duplication in `repository-structure.md` v2.1.** Measured here,
 independently confirmed upstream, and cut in 2.3 — *The four tiers* and
