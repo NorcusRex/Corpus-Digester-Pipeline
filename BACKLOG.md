@@ -15,9 +15,9 @@ reasoning is worth being able to find.
 | 1 | Keyword soft tier — run the audit, then rule | Nick |
 | 2 | ChatGPT export media — run the inspection | Nick |
 | 3 | `3-Reporting` stamping — rule whether it is needed | Nick |
-| 4 | Carry the handoff note to AI Methods, return three files | Nick |
-| 5 | Two inconsistencies between the new reference files | Item 4 |
-| 6 | ChatGPT export media — build the fix | Item 2 |
+| 4 | One correction back to AI Methods — a version contradiction | Nick |
+| 5 | ChatGPT export media — build the fix | Item 2 |
+| 6 | Multi-word keywords — PM has ruled it in | Nobody; unscheduled |
 | — | Acceptance tiers 1–4 | Out of scope — the reporting skill's job |
 
 ---
@@ -80,7 +80,7 @@ python inspect_chatgpt_assets.py "<export folder>" --report assets.txt
 ```
 
 Needed because the export format has changed across ChatGPT versions, and the
-pointer-to-file mapping should be known rather than guessed. Unblocks item 6.
+pointer-to-file mapping should be known rather than guessed. Unblocks item 5.
 
 ## 3. `3-Reporting` stamping — Decision 2
 
@@ -93,79 +93,49 @@ pass at all. That is a question about your filing habits, not about the code.
 are catalogued by companion sidecars (`tier_sidecars.py`) which leave the
 artifact byte-identical.
 
-## 4. Carry the handoff note to AI Methods
+## 4. One correction back to AI Methods
 
-The note is written, current and pushed:
+**The round-trip worked.** The handoff note went over, and
+`repository-structure.md` 2.3 and `project-manifest-format.md` 1.3 came back on
+2026-09-25, both installed in `references/`. The Designer's cover note is kept
+at `docs/handoffs/2026-09-25__designer-response.md`. What was settled is
+recorded in `references/README.md`; the three findings that prompted it are
+closed below.
 
-```
-docs/handoffs/2026-09-25-1514__reference-file-ownership.md
-```
+**One thing needs to go back.** `project-manifest-format.md` 1.3 states two
+different versions for itself:
 
-**On the branch, not on `main`.** Read it on GitHub from
-`claude/vigilant-davinci-amht34`, or from the local clone after checking that
-branch out. Paste it into the AI Methods conversation.
+| Where | Says |
+|---|---|
+| Header, line 3 | **Version 1.3** |
+| Designer's cover note | 1.3 |
+| *Versioning* section, line 81 | "This document is version **1.2**" |
 
-**Three things come back**, each as a new version of a file the Designer owns:
+The body line is the stale one, on the Designer's own account of the sequence —
+1.2 was the editorial revision that exposed the bad rule, 1.3 is its
+replacement. So the fix is one line, and it belongs in the Designer's copy, not
+this one.
 
-| File | Version | For |
-|---|---|---|
-| `repository-structure.md` | v2.2 | The cut list — 51% of it duplicates the glossary |
-| `project-manifest-format.md` | v1.2 | The shared-file versioning rule |
-| `corpus-glossary.md` | possibly | Only if the three-versus-four count moves here instead |
+It is worth sending rather than shrugging at, because of where it landed: the
+*Versioning* section is the part that was rewritten this round, and the rule it
+now states is that a version describes the thing it is attached to. A file
+carrying two versions of itself is the exact failure that rule exists to
+prevent. It is also the kind of defect this arrangement is least able to absorb
+— a file is the only channel between Designer and Developer, so a copy that
+misstates its own version is an unnoticed disagreement waiting to happen.
 
-Drop the returned files into `references/` and tell me; I will check each
-against the code and against the other two, the way v1.1 and v2.1 were checked.
+**Nothing is blocked by it.** The wire format is unchanged at `1.0`, the
+pipeline reads manifests by content shape, and no code acts on either number.
 
-**Why it is a card rather than a step.** Designer and Developer have no channel
-to each other — every change crosses through you as a file. So this is the
-blocking link in the chain, and item 5 cannot move until it clears. It is also
-the point where versions start to drift: the fix sits in the note until someone
-walks it over.
-
-## 5. Two inconsistencies between the new reference files
-
-**The sidecar half is resolved.** Both `corpus-glossary.md` v1.0 and
-`repository-structure.md` v2.1 now describe it correctly — the glossary says the
-pipeline "copies through or sidecars whatever it cannot convert", and v2.1 says
-files it cannot convert "appear as a small Markdown sidecar recording the
-original's name, type and source path". The message drafted for the source
-conversation on this point is no longer needed.
-
-Two smaller things remain, both for whoever maintains the shared files. **Both
-are written up in the handoff note**, so they travel with item 4 rather than
-needing anything separate from you — this entry records the findings, item 4
-delivers them.
-
-**The corpus is three places or four, depending which file you read.**
-`corpus-glossary.md` v1.0 says four — conversation, past conversations,
-**Evernote notes**, Drive repository — and declares itself the file that
-reconciles disagreements. `repository-structure.md` v2.1 says three in its
-*Vocabulary* section and again in *Project and corpus*, omitting Evernote. The
-glossary is presumably right, being newer on this point, but v2.1 shipped in
-the same bundle and contradicts it.
-
-Nothing in the pipeline depends on the answer: it converts `1-Raw` into
-`2-Digested` and never sees a conversation or a live source. It matters to the
-searcher.
-
-**The multi-word keyword requirement vanished in the split.**
-`repository-structure.md` v1.11 said "Most keywords are multi-word". v2.1
-removes the whole Frontmatter section, and `pipeline-conventions.md` inherited
-only "a list of quoted strings". So the requirement now exists nowhere.
-
-The pipeline emits single words, so this closes the gap — but by accident of
-the split rather than by decision. If multi-word keywords were wanted, the
-requirement belongs in `pipeline-conventions.md`, and the work is real: n-gram
-candidates that do not cross punctuation, rejecting ones bounded by stopwords,
-scored alongside unigrams, then dropping single words a chosen phrase covers.
-TF-IDF handles n-grams unchanged, and the lexicon already accepts multi-word
-entries.
+**What to do.** Ask AI Methods for 1.4 with the body line corrected, or batch it
+with the next change to that file. Drop the result into `references/` and tell
+me.
 
 ---
 
 # Waiting on me
 
-## 6. ChatGPT export media — build the fix
+## 5. ChatGPT export media — build the fix
 
 **Blocked on item 2.**
 
@@ -177,6 +147,32 @@ the export and the converter throws it away. This is the path covering the
 
 The Claude side is better placed — `render_files` already reads `file_name` and
 `file_uuid`.
+
+## 6. Multi-word keywords
+
+**Ruled in by Nick, unscheduled.** Real work, nobody blocked, no date.
+
+The requirement existed in `repository-structure.md` v1.11 — "Most keywords are
+multi-word" — and vanished when the conventions were split: v2.1 removed the
+Frontmatter section and `pipeline-conventions.md` inherited only "a list of
+quoted strings". The pipeline emits single words, so nothing is currently
+violating a rule; the rule had simply stopped existing. The Designer accepted
+the finding and left it out of 2.3 deliberately. When it is picked up, the
+requirement belongs in `pipeline-conventions.md`, which the pipeline owns.
+
+**Scope.** Generate n-gram candidates that do not cross punctuation, reject ones
+bounded by stopwords, and score them alongside unigrams. TF-IDF handles n-grams
+unchanged, and the lexicon already accepts multi-word entries.
+
+**One step of the original sketch is wrong, corrected by the Designer.** It
+proposed dropping single words that a chosen phrase covers. That discards
+evidence: a word occurring fifty times, ten of them inside a phrase, has earned
+its own entry on the other forty. Score phrases and single words independently
+and keep both where both earn a place.
+
+**What it is worth.** Better browsing. It would not have prevented the retrieval
+failure that started this — that was conjunctive queries and searching in the
+wrong vocabulary, both on the searcher's side.
 
 ---
 
@@ -235,6 +231,36 @@ spelling fix would have destroyed good output.
 
 Kept because the reasoning is worth finding again, not because anything is
 pending.
+
+## Inconsistencies between the shared reference files
+
+**All three resolved**, two by the Designer in the 2026-09-25 round and one
+before it. Recorded because each was found by reading the shipped files against
+each other, which is the only check this arrangement gets.
+
+**The sidecar description disagreed with the pipeline.** Resolved before the
+round: `corpus-glossary.md` v1.0 says the pipeline "copies through or sidecars
+whatever it cannot convert", and `repository-structure.md` says files it cannot
+convert "appear as a small Markdown sidecar recording the original's name, type
+and source path". Both now match what the code does.
+
+**The corpus was three places or four, depending which file you read.** The
+glossary said four — conversation, past conversations, Evernote notes, Drive
+repository — and declares itself the file that reconciles disagreements.
+`repository-structure.md` v2.1 said three, in two separate places, omitting
+Evernote. Resolved in 2.3: the preamble defers to the glossary rather than
+restating a corpus definition, and *Project and corpus* names all four. Nothing
+in the pipeline depended on the answer — it converts `1-Raw` into `2-Digested`
+and never sees a conversation or a live source — but the searcher does.
+
+**The multi-word keyword requirement vanished in the split.** Accepted and
+ruled in as pipeline work; now item 6 rather than a reference-file problem.
+
+**51% duplication in `repository-structure.md` v2.1.** Measured here,
+independently confirmed upstream, and cut in 2.3 — *The four tiers* and
+*Non-tier siblings*, both owned by the glossary, 121 lines down to 97. Checked
+before installing that the glossary really does carry what was cut, so the cut
+removed a duplicate rather than the only copy.
 
 ## docx unresolved drawings — Decision 7
 
@@ -355,8 +381,11 @@ or Drive path appears in any generic script; rclone is found through
 `RCLONE_EXE`, the `PATH`, or a default, by one shared preamble rather than four
 copies of the same check.
 
-**9.6.** The stray `SKILL.md` is replaced by `project-manifest-format.md` v2.3,
-read from the `update-project-manifest` skill's own reference folder. No parser
+**9.6.** The stray `SKILL.md` is replaced by `project-manifest-format.md`, read
+from the `update-project-manifest` skill's own reference folder. The copy that
+arrived was stamped **v2.3** — the host skill bundle's version, not the shared
+file's, which is the per-bundle stamping bug that set off the versioning work.
+The same document is now at 1.3 in `references/`. No parser
 change was needed, verified rather than assumed: the manifest is consumed by
 `claude_to_markdown.py`, detected by content shape (`project_uuid` +
 `conversations`) rather than by filename, and every field is read with `.get()`.
@@ -364,8 +393,8 @@ A manifest carrying `manifest_format_version`, every documented field, and
 invented keys besides is still recognised correctly. The manifest is recorded
 as a named pipeline input in the pipeline guide alongside `project_names.tsv`.
 
-The version-numbering oddity found while doing this is under item 5, since it
-goes back to the same place.
+That oddity is what became the versioning rule the Designer rewrote for 1.3.
+The one loose end left in it is item 4.
 
 ## Keyword weighting simplified to one question
 

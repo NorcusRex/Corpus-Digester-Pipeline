@@ -1,6 +1,6 @@
 # Project Manifest Format
 
-**Version 1.1**
+**Version 1.3**
 
 The format contract for a project manifest. Written by the
 `update-project-manifest` skill and read by whatever consumes it.
@@ -78,16 +78,23 @@ them.
 
 ## Versioning
 
-The version in this document and the value of `manifest_format_version` move
-together: this document at v1.0 describes `"manifest_format_version": "1.0"`.
+This document is version 1.2 and describes `manifest_format_version` **1.0**.
 
-The pipeline is **not** versioned in step with the format. It declares which
-format versions it accepts; the two enumerations are independent, and coupling
-them would mean bumping the format every time the pipeline changes.
+**The two are independent.** The document version changes whenever this file
+changes — including for wording, framing or examples. The format version
+changes only when the JSON a consumer must parse changes. Either may move
+without the other.
+
+A version describes the thing it is attached to and nothing else.
+
+The pipeline is **not** versioned in step with the format either. It declares
+which format versions it accepts; the enumerations are independent, and
+coupling them would mean bumping the format every time the pipeline changes.
 
 An unrecognized or absent version is simply an unusable manifest, and falls to
 whatever the consumer already does with a missing or malformed one. No special
 rule is needed.
+
 
 ## What is not versioned
 

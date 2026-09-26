@@ -34,34 +34,40 @@ source is drift, not a variant.
 | File | Version | Received | Canonical owner | Why the pipeline holds it |
 |---|---|---|---|---|
 | `corpus-glossary.md` | 1.0 | 2026-09-25 | AI Methods / `search-project-corpus` | Vocabulary the pipeline uses: corpus, repository, tier, sidecar, index, manifest |
-| `repository-structure.md` | 2.1 | 2026-09-25 | AI Methods / `search-project-corpus` | The contract the pipeline owes the searcher, and the `_index.json` format both parse |
-| `project-manifest-format.md` | 1.1 | 2026-09-25 | AI Methods / `update-project-manifest` | Format of a real pipeline input, consumed by `claude_to_markdown.py` |
-
-### Expected from the Designer
-
-Raised in `docs/handoffs/2026-09-25-1514__reference-file-ownership.md` and
-awaiting a new version:
-
-| File | Expected | For |
-|---|---|---|
-| `repository-structure.md` | v2.2 | The cut list — remove the four tiers, non-tier siblings and the corpus definition, all owned by the glossary |
-| `project-manifest-format.md` | v1.2 | Decouple the document version from `manifest_format_version` |
-| `corpus-glossary.md` | possibly | Only if the corpus three-versus-four contradiction is resolved by amending the glossary rather than by cutting v2.1's definition |
-
-Batching them is fine. None blocks the pipeline: all three are prose the code
-does not act on.
+| `repository-structure.md` | 2.3 | 2026-09-25 | AI Methods / `search-project-corpus` | The contract the pipeline owes the searcher, and the `_index.json` format both parse |
+| `project-manifest-format.md` | 1.3 | 2026-09-25 | AI Methods / `update-project-manifest` | Format of a real pipeline input, consumed by `claude_to_markdown.py` |
 
 All three are current as of the dates above.
 
-One thing to know when reading `project-manifest-format.md`: **the document's
-version and the format's version are not the same number.** The document is at
-1.1; the format it describes is at 1.0. v1.1 changed only the framing — it
-stopped naming the digestion pipeline as the consumer and now presents it as one
-worked example — and the wire format did not change, so bumping
-`manifest_format_version` would have signalled a change that did not happen.
+### What the last round settled
 
-The document's own *Versioning* section still says the two "move together",
-which is now inaccurate. Raised upstream.
+The three requests in `docs/handoffs/2026-09-25-1514__reference-file-ownership.md`
+came back answered on 2026-09-25. The Designer's cover note is kept verbatim at
+`docs/handoffs/2026-09-25__designer-response.md`.
+
+- **`repository-structure.md` 2.3** applies the cut list. The vocabulary
+  sections are gone and a short *Scope* section points at `corpus-glossary.md`
+  instead; 121 lines down to 97. Verified before installing that the glossary
+  does carry what was cut — the four tiers and the utility siblings are both
+  defined there — so the cut removed duplication rather than the only copy.
+- **The corpus is four places.** Both places `repository-structure.md` said
+  three now defer to the glossary or name all four, Evernote included.
+- **`project-manifest-format.md` 1.3** replaces the versioning rule rather than
+  patching it. The document version and `manifest_format_version` are now
+  stated as independent. The wire format is unchanged at `1.0`, so no pipeline
+  change follows.
+- **`corpus-glossary.md` stays at 1.0.** Unchanged and needing no action.
+
+**One defect came with it.** `project-manifest-format.md` 1.3 gives two
+different versions for itself: the header says 1.3, its *Versioning* section
+says "This document is version 1.2". The body line is the stale one on the
+Designer's own account of the sequence. Installed as received rather than
+corrected, per the rule above, and raised for the next round — see `BACKLOG.md`
+item 4.
+
+**Still true, and worth knowing when reading `project-manifest-format.md`:** the
+document's version and the format's version are not the same number. The
+document is at 1.3; the format it describes is at 1.0.
 
 ## What is not here
 
