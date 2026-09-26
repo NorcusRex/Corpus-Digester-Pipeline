@@ -54,6 +54,7 @@ import docx_to_markdown        # noqa: E402
 import xlsx_to_markdown        # noqa: E402
 import chatgpt_to_markdown     # noqa: E402
 import chatgpt_assets          # noqa: E402
+import ocr_pdf                 # noqa: E402
 import claude_to_markdown      # noqa: E402
 import rtf_to_markdown         # noqa: E402
 import html_to_markdown        # noqa: E402
@@ -69,16 +70,24 @@ except ImportError:
 
 # pdf_to_markdown raises SystemExit at import time if pypdf is missing.
 # Catch that so the orchestrator can still process the other formats.
+# An optional dependency's import must never take the run down with it, and
+# ImportError is not the only way one can fail. A pypdf whose native crypto
+# backend is broken raises a pyo3 PanicException, which inherits from
+# BaseException and sails straight past `except Exception`. Found the hard
+# way, on a machine with exactly that install. KeyboardInterrupt is re-raised
+# so the broad catch cannot swallow a Ctrl-C.
 try:
     import pdf_to_markdown     # noqa: E402
     HAVE_PDF = True
     _pdf_error: str | None = None
+except KeyboardInterrupt:
+    raise
 except SystemExit as e:
     HAVE_PDF = False
     _pdf_error = str(e) or "pypdf not installed"
-except ImportError as e:
+except BaseException as e:  # noqa: BLE001
     HAVE_PDF = False
-    _pdf_error = str(e)
+    _pdf_error = str(e) or e.__class__.__name__
 
 
 SKIP_FILE_PREFIXES = ("~$", ".")  # Office lock files, dotfiles
@@ -290,6 +299,12 @@ def _copy_through(src: Path, dest_dir: Path, allocated: set,
     return f"{kind} (copied)"
 
 
+# Set once in main(). Module-level because the converter dispatch is a deep
+# call chain and threading two rarely-used settings through every frame would
+# cost more clarity than it buys.
+OCR_CACHE_DIR: Path | None = None
+EXTRACT_PDF_IMAGES: bool = True
+
 _ASSET_INDEX_CACHE: dict = {}
 
 
@@ -481,7 +496,11 @@ def process_file(src: Path, src_root: Path, out_root: Path,
                 return "skipped (no pypdf)"
             md_path = claim_output_path(out_dir / f"{stem}.md", allocated)
             basename = md_path.stem
-            fm, body = pdf_to_markdown.convert_pdf(src, out_dir, basename)
+            fm, body = pdf_to_markdown.convert_pdf(
+                src, out_dir, basename,
+                ocr_pages=(ocr_pdf.cached_pages(OCR_CACHE_DIR, src)
+                           if OCR_CACHE_DIR else None),
+                extract_images=EXTRACT_PDF_IMAGES)
             add_metadata.stamp_source_identity(fm, src)
             write_md(md_path, fm, body, pdf_to_markdown.to_yaml_frontmatter)
             stats["pdf"] += 1
@@ -688,6 +707,20 @@ def main() -> int:
     ap.add_argument("--rename-tsv", default=None,
                     help="Path to the project-name TSV file (default: "
                          "project_names.tsv next to process_folder.py)")
+    ap.add_argument("--ocr", action="store_true",
+                    help="Before converting, OCR any scanned PDF that has no "
+                         "text layer and cache the result. Needs ocrmypdf on "
+                         "PATH or in OCRMYPDF_EXE. Nothing in 1-Raw is "
+                         "modified: the text is cached, the OCR'd PDF is "
+                         "discarded.")
+    ap.add_argument("--ocr-jobs", type=int, default=4,
+                    help="OCR processes to run at once (default 4)")
+    ap.add_argument("--ocr-lang", default=None,
+                    help="Tesseract language code, passed to ocrmypdf as -l")
+    ap.add_argument("--no-pdf-images", action="store_true",
+                    help="Do not extract embedded images from PDFs. For a "
+                         "scanned book every page image is the page itself, "
+                         "so extracting them duplicates the document.")
     ap.add_argument("--no-index", action="store_true",
                     help="Skip writing _index.json. Only search reads it, so "
                          "an archive corpus nobody searches does not need one. "
@@ -721,6 +754,13 @@ def main() -> int:
                    if args.corpus_root else src_root.parent)
     subject_names = ({n.lower() for n in args.subject}
                      if args.subject else None)
+
+    global OCR_CACHE_DIR, EXTRACT_PDF_IMAGES
+    EXTRACT_PDF_IMAGES = not args.no_pdf_images
+    # The cache sits at the corpus root rather than beside the output, so it
+    # survives a --clean rebuild of 2-Digested. Re-OCRing a hundred books
+    # because the output tree was rebuilt is exactly what the cache is for.
+    OCR_CACHE_DIR = corpus_root / ocr_pdf.CACHE_DIR_NAME if args.ocr else None
     lexicon_dirs = list(args.lexicon or [])
     if not lexicon_dirs and (SCRIPT_DIR / "lexicon").is_dir():
         lexicon_dirs.append(SCRIPT_DIR / "lexicon")
@@ -788,6 +828,21 @@ def main() -> int:
     if args.dry_run:
         print("Mode   : DRY RUN (nothing will be written)")
     print()
+
+    # ---- OCR pre-pass ---------------------------------------------------
+    # Before conversion, so the converter finds text already cached. Run as
+    # one batch rather than per file: ocrmypdf calls are independent, and
+    # running several at once is the difference between an overnight job and
+    # a weekend one.
+    if args.ocr:
+        pdfs = sorted(f for f in files if f.suffix.lower() == ".pdf")
+        if pdfs:
+            print("Checking PDFs for a text layer...")
+            ocr_pdf.run_batch(
+                pdfs, OCR_CACHE_DIR, jobs=args.ocr_jobs, lang=args.ocr_lang,
+                dry_run=args.dry_run,
+                log_path=corpus_root / "_ocr-problems.md")
+            print()
 
     stats: Counter = Counter()
     allocated: set = set()

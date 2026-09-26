@@ -287,6 +287,47 @@ a sidecar, only when its frontmatter is **complete**. Presence is not enough: an
 older artifact carrying a bare `title:` looks finished and is still invisible to
 search. Those now get a sidecar like any other artifact.
 
+## Scanned PDFs
+
+A scanned PDF is a picture of a page: `pypdf` extracts nothing, so without help
+the document reaches `2-Digested` with no body, no keywords, and no way for
+search to find it. `likely_scanned: true` in the frontmatter says so.
+
+`--ocr` recovers the text. Three properties are deliberate.
+
+**`1-Raw` is never modified.** The obvious approach is to run `ocrmypdf` over
+the raw tree and overwrite each file. That is safe only where `1-Raw` holds
+copies, and by definition it holds incoming material, which for most corpora
+means the originals. So `ocrmypdf` writes to a sidecar, the text is cached, and
+the OCR'd PDF is discarded. The corpus gains the text, which is the part search
+needs.
+
+**The cache is keyed on content hash, in `_ocr-cache` at the corpus root.** OCR
+is the slowest thing the pipeline can do, seconds per page against milliseconds
+for everything else, and digestion is meant to be re-runnable. Hashing the
+content rather than the path means a renamed, moved or re-copied book is still
+a hit; editing the PDF is what invalidates it, which is the only thing that
+should. The cache sits at the corpus root rather than under `2-Digested` so it
+survives a `--clean` rebuild.
+
+**OCR text is used only where the page yields none.** A page with a real text
+layer keeps it. OCR of an already-digital page is a worse reading of the same
+thing, so it is never allowed to overwrite one. `text_source` records `ocr` or
+`mixed`, and `ocr_pages` counts how many pages needed it.
+
+Failures are named in `_ocr-problems.md` at the corpus root and counted in the
+run summary. A book that produces no text is recorded but **not** cached, so a
+better scan of it is tried again rather than being permanently remembered as
+empty.
+
+`ocrmypdf` is external and optional, found through `OCRMYPDF_EXE` or `PATH`.
+Absent, OCR is skipped with a message and the rest of the run proceeds.
+
+**`--no-pdf-images` exists for this case.** The PDF converter extracts every
+embedded image from every page. For a scanned book each page image *is* the
+page, so extraction duplicates the whole document as loose files for no search
+value at all.
+
 ## What the pipeline never does
 
 **It never deletes.** `clean_stale.py` reports; `pipeline_selfcheck.py` has no

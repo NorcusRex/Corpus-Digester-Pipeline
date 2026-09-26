@@ -66,6 +66,7 @@ calls everything in order. Copy `corpus_wrapper.template.bat` into a corpus's
 | `pipeline_selfcheck.py` | Six checks over the pipeline's own output |
 | `tier_sidecars.py` | Catalogues an authored tier without modifying it |
 | `stamp_tier.py` | Fills in missing frontmatter on an authored tier's Markdown |
+| `ocr_pdf.py` | Recovers text from scanned PDFs into a content-hashed cache |
 | `sync_subset.py` | Mirrors a selected subset of digested conversations |
 | `subset_inventory.py` | Reports what a digested archive offers for selection, and what nothing selects |
 | `split_export.py` | Splits an AI export into per-project exports before any conversion |
@@ -133,6 +134,10 @@ for supplying word lists and project glossaries that protect real terms.
 | [`BACKLOG.md`](BACKLOG.md) | Agreed but unbuilt, and what waits on a ruling |
 
 ## Requirements
+
+`ocrmypdf` is optional and external — a program, not a package, invoked as a
+subprocess only when `--ocr` is given. Without it scanned PDFs digest as they
+did before: flagged `likely_scanned`, with no text.
 
 Python 3.10 or later. `pypdf` for PDF conversion; without it PDFs are reported
 as skipped and everything else still runs. No other dependencies.

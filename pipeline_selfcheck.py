@@ -69,7 +69,7 @@ REQUIRED_FIELDS = ("title", "keywords", "date", "source")
 
 # Not corpus content. The distinction is by role, not by naming pattern,
 # though a leading underscore or dot marks most of them.
-EXCLUDED_DIR_NAMES = {"_audit", "_Tools", "__pycache__", "node_modules"}
+EXCLUDED_DIR_NAMES = {"_audit", "_Tools", "_ocr-cache", "__pycache__", "node_modules"}
 EXCLUDED_FILE_NAMES = {"DIRTREE.txt", "FILETREE.txt", "tree.txt",
                        ".DS_Store", "Thumbs.db"}
 EXCLUDED_FILE_PREFIXES = ("~$",)          # Office lock files

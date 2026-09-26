@@ -120,25 +120,17 @@ before the vocabulary existed.
 are processed, then digest normally. Nothing here needs new pipeline
 architecture.
 
-**One pipeline change it does need.** `pdf_to_markdown.py` extracts every
-embedded image from every page. For a *scanned* book that is the whole book
-again as loose page images — a 300-page scan yields 300 full-page images for
-no search value whatsoever, since the text came from the OCR layer. Across the
-scanned half of a hundred books that is plausibly tens of gigabytes, and it
-all syncs to Drive. Needs a way to skip or threshold image extraction before
-this corpus is digested. Not built; the choice between "skip all images" and
-"skip images above a size" is Nick's.
+**The pipeline now handles the scanned half itself.** `--ocr` was built after
+this entry was written: see *OCR is a pipeline pass now* in the closed items.
+`--no-pdf-images` was built with it, for the duplication problem below.
 
-**Two smaller things worth knowing.**
+**Still worth knowing.** `--skip-text` skips a page that already carries any
+text. How it treats a mixed book — scanned plates inside a text-layer PDF — is
+worth checking on one file before committing a batch to it. A question, not a
+known fault, and one only a real `ocrmypdf` can answer.
 
-`batch_ocr.bat` writes over each file in place. That is correct here rather
-than dangerous, because `1-Raw` holds copies and the archive is untouched — if
-a file is damaged you re-copy it. But it sends errors to `nul`, so a book that
-fails OCR stays silently unchanged and nothing says which. Worth a log.
-
-`--skip-text` skips a page that already carries any text. How it treats a
-mixed book — scanned plates inside a text-layer PDF — is worth checking on one
-file before committing a batch to it. A question, not a known fault.
+**What remains here is yours, not the code's:** choosing which books go in
+`1-Raw`.
 
 ---
 
@@ -233,6 +225,49 @@ while looking finished. Completeness is now the test.
 
 **The audit report is on by default.** `AUDIT=1` in the wrapper, because it
 costs nothing and forgetting the flag was the only obstacle to item 1.
+
+## OCR is a pipeline pass now
+
+**Built as `ocr_pdf.py`, behind `--ocr`.** Nick's call: OCR belongs in the
+general pipeline, so scanned PDFs stop being a hole in every corpus rather
+than a problem solved once for the RPG library.
+
+**The design decision was where the text goes.** A hand-rolled batch script
+runs `ocrmypdf` over the raw tree and overwrites each file. That is safe when
+`1-Raw` holds copies, as it does for the RPG library, and wrong as general
+pipeline behaviour, because `1-Raw` holds incoming material and for most
+corpora those are the originals. So nothing is modified: `ocrmypdf` writes a
+text sidecar, the text is cached, the OCR'd PDF is discarded.
+
+**The cache is keyed on content hash**, in `_ocr-cache` at the corpus root —
+excluded from digestion, and outside `2-Digested` so a `--clean` rebuild does
+not throw it away. A renamed, moved or re-copied book is still a hit. Editing
+the PDF invalidates it, which is the only thing that should.
+
+**OCR never overwrites a real text layer.** It is used per page, only where
+the page itself yielded nothing. `text_source` records `ocr` or `mixed`.
+
+**Failures are named**, in `_ocr-problems.md` and the run summary. A book that
+OCRs to nothing is recorded but not cached, so a better scan of it is tried
+again instead of being permanently remembered as empty.
+
+Runs several files at once, because `ocrmypdf` calls are independent and that
+is the difference between an overnight job and a weekend one.
+
+**A bug in existing code, found by the test container.** Both here and in
+`process_folder.py`, the optional pypdf import was guarded with
+`except ImportError`. A pypdf whose native crypto backend is broken raises a
+pyo3 `PanicException`, which inherits from `BaseException` and sails past it —
+so a broken install took down the entire digest run rather than just skipping
+PDFs. This machine has exactly that install, which is how it surfaced. Both
+guards now catch `BaseException` and re-raise `KeyboardInterrupt`.
+
+**Tested, with one real gap.** The batch driver, the cache, the hash-keyed
+rename survival, the parallel path, the failure log, the empty-result
+handling and the page splitting were all exercised against a stub `ocrmypdf`.
+The real `ocrmypdf` invocation and the pypdf-based scanned-or-not probe were
+**not** run, because neither is installed in the container that wrote this.
+First live run should be `--ocr --dry-run` on a handful of books.
 
 ## ChatGPT assets, resolved against a measured export
 

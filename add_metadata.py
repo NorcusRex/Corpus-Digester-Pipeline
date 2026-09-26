@@ -572,7 +572,8 @@ def build_corpus_doc_freq(md_files: list) -> tuple[dict, int]:
 # divergence stopped being harmless -- `1-Raw/_Tools/foo.bat` produced a
 # `foo.bat.md` sidecar that the self-check then refused to look at.
 
-EXCLUDED_DIR_NAMES = frozenset({"_audit", "_Tools", "__pycache__", "node_modules"})
+EXCLUDED_DIR_NAMES = frozenset({"_audit", "_Tools", "_ocr-cache",
+                                "__pycache__", "node_modules"})
 EXCLUDED_FILE_NAMES = frozenset({"DIRTREE.txt", "FILETREE.txt", "tree.txt",
                                  ".DS_Store", "Thumbs.db", "desktop.ini"})
 EXCLUDED_FILE_PREFIXES = ("~$",)      # Office lock files
