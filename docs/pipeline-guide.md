@@ -45,6 +45,9 @@ Output is lossless. Every cell, footnote, comment, image, formula, tracked chang
 docx_to_markdown.py       .docx  -> .md  (+ _media/)
 xlsx_to_markdown.py       .xlsx  -> .md
 pdf_to_markdown.py        .pdf   -> .md  (+ _media/)
+                          --no-images skips image extraction; see below.
+ocr_pdf.py                Recovers text from scanned PDFs into a cache.
+                          Not a converter -- a pre-pass. See OCR below.
 html_to_markdown.py       .html  -> .md  (+ _media/ for inline images)
                           For Evernote exports and other HTML notes.
 rtf_to_markdown.py        .rtf   -> .md
@@ -320,7 +323,8 @@ The `--dry-run` flag previews changes without making them.
 - Annotations (comments, sticky notes, highlights, link annotations): per-page list with author, date, type, contents
 - Form fields: AcroForm field names and values in "## Form fields"
 - Embedded files / attachments: extracted to <name>_media/, listed in "## Attachments"
-- Scanned PDFs are detected (pages exist but no extractable text) and flagged with "likely_scanned: true" in frontmatter
+- Scanned PDFs are detected (pages exist but no extractable text) and flagged with "likely_scanned: true" in frontmatter. With `--ocr` their text is recovered — see the OCR section below.
+- Image extraction can be switched off with `--no-pdf-images` on the orchestrator, or `--no-images` on the converter. This matters for scanned books: every page image IS the page, so extracting them writes the whole document out again as loose files, for no search value at all. A 300-page scan produces 300 full-page images. Across a shelf of scanned books that is tens of gigabytes, and all of it syncs to Drive.
 
 .HTML / .HTM
 
@@ -754,6 +758,34 @@ The command-line argument selects how much it does:
 
 **The wrapper never deletes.** The stale check and the self-check report only. Removing anything means running `clean_stale.py` yourself, deliberately, with the flags above. That is a change from the old `digest_all.bat`, whose `--delete-stale` would have removed digested output whose source had merely been renamed or cleared to save space.
 
+## OCR FOR SCANNED PDFS (ocr_pdf.py)
+
+A scanned PDF is a picture of a page. `pypdf` extracts nothing from it, so without help the document lands in `2-Digested` with no body, no keywords, and no way for search to find it. The frontmatter says `likely_scanned: true`, and until now that was the end of it.
+
+```
+python process_folder.py 1-Raw 2-Digested --corpus-root <root> --ocr
+python process_folder.py 1-Raw 2-Digested --corpus-root <root> --ocr --ocr-jobs 8
+python ocr_pdf.py 1-Raw --cache _ocr-cache --dry-run
+```
+
+In the per-corpus wrapper this is `OCR=1`.
+
+**`1-Raw` is never modified.** The obvious approach -- and the one a hand-rolled batch script reaches for -- is to run `ocrmypdf` over the raw tree and overwrite each file with its OCR'd version. That is safe only where `1-Raw` holds copies. By definition it holds incoming material, which for most corpora means the originals, and a pipeline that rewrites originals is one bad run away from losing them. So `ocrmypdf` writes its text to a sidecar, the text is cached, and the OCR'd PDF is thrown away. The corpus gains the text, which is the part search needs.
+
+**The cache is keyed on content hash.** It lives in `_ocr-cache` at the corpus root, is excluded from digestion, and sits outside `2-Digested` so a `--clean` rebuild does not discard it. OCR is the slowest thing the pipeline can do -- seconds per page against milliseconds for everything else -- and digestion is meant to be re-runnable. Hashing the content rather than the path means a book that is renamed, moved between corpora, or re-copied from an archive is still a hit. Editing the PDF is what invalidates it, which is the only thing that should.
+
+**OCR text never overwrites a real text layer.** It is applied per page, only where the page itself yielded nothing. OCR of an already-digital page is a worse reading of the same thing. `text_source` in the frontmatter records `ocr` or `mixed`, and `ocr_pages` counts how many pages needed it.
+
+**Failures are named, not swallowed.** Anything OCR could not read is listed in `_ocr-problems.md` at the corpus root and counted in the run summary. A book that OCRs to nothing is recorded but **not** cached, so a better scan of it is tried again rather than being permanently remembered as empty.
+
+**Several files at once.** `ocrmypdf` invocations are independent, so `--ocr-jobs` runs them in parallel. On a shelf of scanned books this is the difference between an overnight job and a weekend one; the default is 4.
+
+**The dependency is external and optional.** `ocrmypdf` is a program, not a Python package, invoked as a subprocess -- nothing is imported and nothing is installed by the pipeline. It is found through the `OCRMYPDF_EXE` environment variable, then on `PATH`. Without it, OCR is skipped with a message and the rest of the run proceeds exactly as before.
+
+**Run `--ocr --dry-run` first.** It lists which PDFs it judges scanned and writes nothing, including no cache. Worth doing on a handful of books before committing a large set: `--skip-text` treats a page carrying any text as done, and how that behaves on a mixed book -- scanned plates inside a text-layer PDF -- is worth seeing on a real file.
+
+**Pair it with `--no-pdf-images` for scanned material.** Every page of a scan is one full-page image, so extracting them duplicates the entire book as loose files while adding nothing searchable.
+
 ## TWO CORPORA, TWO DIGEST RUNS
 
 The thing that is easy to get wrong, so it is stated before the mechanics: **an export archive is itself a corpus, and it must be digested by its own run before any other corpus can select from it.**
@@ -982,7 +1014,7 @@ A specific file fails with an error Open the log file in OUTPUT_DIR (named `_pip
 
 PDF text comes out garbled or in the wrong order PDF is a layout format, not a content format. Multi-column or heavily-styled PDFs can have imperfect reading order. The text is still all there, just possibly out of sequence within a page.
 
-A scanned PDF produces an empty .md Frontmatter will say "likely_scanned: true". To recover the text, run the source PDF through OCR first: pip install ocrmypdf ocrmypdf input.pdf input.ocr.pdf Then re-run the pipeline on the OCR'd version.
+A scanned PDF produces an empty .md. Frontmatter will say "likely_scanned: true". Re-run the digest with `--ocr` and the pipeline recovers the text itself — you do not need to OCR the file by hand, and you should not overwrite the original to do it. See the OCR section. If `--ocr` reports that ocrmypdf was not found, install it and put it on PATH, or point OCRMYPDF_EXE at it.
 
 The console window closes too fast to read the summary This shouldn't happen with the .bat (it has `pause` at the end). If it does, run the .bat from an already-open command prompt.
 
@@ -993,7 +1025,8 @@ Each converter can also run on its own without the orchestrator, useful for one-
 ```
 python docx_to_markdown.py    SOURCE [-o DEST] [-r]
 python xlsx_to_markdown.py    SOURCE [-o DEST] [-r]
-python pdf_to_markdown.py     SOURCE [-o DEST] [-r]
+python pdf_to_markdown.py     SOURCE [-o DEST] [-r] [--no-images]
+python ocr_pdf.py             TREE   [--cache DIR] [--jobs N] [--dry-run]
 python chatgpt_to_markdown.py FILE   [-o DEST] [--limit N]
 python add_metadata.py        DIR    [-r] [-k N] [--no-index]
 ```

@@ -61,6 +61,20 @@ REM find a false positive. On by default for that reason; set
 REM empty to turn it off.
 set "AUDIT=1"
 
+REM Set to 1 to recover text from scanned PDFs. Needs ocrmypdf
+REM on PATH or in OCRMYPDF_EXE; without it the step is skipped
+REM with a message. Nothing in 1-Raw is modified -- the text is
+REM cached under _ocr-cache at the corpus root, keyed on content
+REM hash, so a re-digest costs nothing. Leave empty for a corpus
+REM with no scanned material.
+set "OCR="
+
+REM Set to 1 to skip extracting images from PDFs. For scanned
+REM books every page image IS the page, so extraction writes the
+REM whole document out again as loose files for no search value.
+REM Set it for a library of scans; leave empty otherwise.
+set "NO_PDF_IMAGES="
+
 REM Set to 1 if this corpus is an EXPORT ARCHIVE -- a tree that
 REM exists only so other corpora can select project folders out
 REM of it, and that is never uploaded or searched itself.
@@ -137,6 +151,8 @@ if not "%GLOSSARIES%"=="" if exist "%GLOSSARIES%" set "OPTS=%OPTS% --lexicon "%G
 if defined AUDIT   set "DO_AUDIT=1"
 if defined DO_AUDIT set "OPTS=%OPTS% --report-artifacts "%CORPUS_ROOT%\_rejected-keywords.md""
 if defined ARCHIVE_ONLY set "OPTS=%OPTS% --archive-only"
+if defined OCR set "OPTS=%OPTS% --ocr"
+if defined NO_PDF_IMAGES set "OPTS=%OPTS% --no-pdf-images"
 
 REM A project-name map beside this wrapper overrides the pipeline's
 REM own copy. Without one, process_folder.py falls back to
