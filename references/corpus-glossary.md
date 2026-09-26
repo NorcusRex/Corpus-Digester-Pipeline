@@ -1,6 +1,6 @@
 # Corpus Glossary
 
-**Version 1.0**
+**Version 1.1**
 
 The corpus data model, shared by the skills that search it and by the digestion
 pipeline that builds it. Where any document disagrees with this file, this file
@@ -15,7 +15,26 @@ Drive repository. A search of "the corpus" covers all four.
 **Repository** — the Drive folder tree alone: the four tiers and what sits
 beneath them. Part of the corpus, not a synonym for it.
 
-**Project** — a Claude project. One project, one corpus. Conversation search is
+**Production corpus** — the home of a project. Carries all four tiers, because
+the project's derived writing and released artifacts accumulate there.
+
+**Reference corpus** — a corpus no project produces into. Carries `1-Raw` and
+`2-Digested` only, because nothing is accumulating in the authored tiers.
+
+The distinction is **whether a project produces into the corpus**; the tier
+structure follows from that. Both kinds are read-only to a searcher. A Reference
+corpus can be promoted to Production if a project starts on it — nothing about
+the classification is one-way.
+
+**Primary and secondary corpora** — a different axis, and independent of the
+first. Production versus Reference is a fact about a corpus. Primary versus
+secondary is a fact about one agent's relationship to it in one search: the
+corpus an agent belongs to is primary, the others it reaches into are secondary.
+A Production corpus owned by one project can be secondary for another project's
+agent.
+
+**Project** — a Claude project. One project, one **Production** corpus, and
+zero or more Reference corpora. Conversation search is
 scoped to a project, which is why nothing outside a project can enumerate its
 conversations.
 

@@ -33,8 +33,8 @@ source is drift, not a variant.
 
 | File | Version | Received | Canonical owner | Why the pipeline holds it |
 |---|---|---|---|---|
-| `corpus-glossary.md` | 1.0 | 2026-09-25 | AI Methods / `search-project-corpus` | Vocabulary the pipeline uses: corpus, repository, tier, sidecar, index, manifest |
-| `repository-structure.md` | 2.3 | 2026-09-25 | AI Methods / `search-project-corpus` | The contract the pipeline owes the searcher, and the `_index.json` format both parse |
+| `corpus-glossary.md` | 1.1 | 2026-09-26 | AI Methods / `search-project-corpus` | Vocabulary the pipeline uses: corpus, repository, tier, sidecar, index, manifest |
+| `repository-structure.md` | 2.4 | 2026-09-26 | AI Methods / `search-project-corpus` | The contract the pipeline owes the searcher, and the `_index.json` format both parse |
 | `project-manifest-format.md` | 1.4 | 2026-09-26 | AI Methods / `update-project-manifest` | Format of a real pipeline input, consumed by `claude_to_markdown.py` |
 
 All three are current as of the dates above.
@@ -67,6 +67,27 @@ that its own version is in the header. A file that states its own version once
 cannot drift from itself. Verified on receipt that the diff is two hunks and
 nothing else moved. Cover note at
 `docs/handoffs/2026-09-25__designer-response-2-version-fix.md`.
+
+### The federation round
+
+The corpora report went over and came back answered on 2026-09-26. Cover note
+at `docs/handoffs/2026-09-26__designer-response-3-federation.md`.
+
+- **`corpus-glossary.md` 1.1** defines Production corpus, Reference corpus, and
+  the primary/secondary axis as independent of the first. "One project, one
+  corpus" is now "one Production corpus, and zero or more Reference corpora".
+- **`repository-structure.md` 2.4** takes the smaller edit rather than a kind
+  system: a root is a corpus if `1-Raw` and `2-Digested` sit beneath it, a
+  Production corpus if the authored tiers are there too, and not a corpus at
+  all if the first two are missing. Three lines instead of a taxonomy.
+- **The open dependency is dissolved rather than answered.** Both degradation
+  mechanisms required pooling results; Nick's rule forbids pooling, so neither
+  can occur. Cost is linear in the number of corpora — slower, not worse.
+- **`search-google-drive` is parked.** Its motivating case was the RPG library,
+  which turns out to have been built as a corpus before the word existed.
+
+**One provenance error, recorded not corrected.** The note attributes figures
+to the corpora report that it does not contain. See the foot of the cover note.
 
 **Still worth knowing when reading `project-manifest-format.md`:** the
 document's version and the format's version are not the same number. The

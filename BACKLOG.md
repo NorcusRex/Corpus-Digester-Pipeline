@@ -100,27 +100,45 @@ and keep both where both earn a place.
 failure that started this — that was conjunctive queries and searching in the
 wrong vocabulary, both on the searcher's side.
 
-## 3. Index or digest the `RPG` library
+## 3. The RPG search library
 
-**Nick's, deferred to "some day".** No date, nobody blocked.
+**Reference corpus, scoped, not started.** No longer "someday, tremendous
+work" — the premise was wrong on both sides.
 
-The library is very large, mostly PDFs, with no corpus structure and no index.
-Two depths, and they are not the same job.
+**The archive is not the corpus.** `I:\RPG` is 96,774 files, 11,463 folders,
+1.15 TB, roughly a thousand games. `I:\RPG\_SearchLibrary` is a different
+thing: a corpus skeleton Nick already built, carrying `1-Raw` and `2-Digested`
+with placeholder files and a `batch_ocr.bat` pointing at the raw tier. `1-Raw`
+is a destination you copy chosen books into. The Designer puts the wanted set
+at **fewer than 100 books**, which is an overnight job rather than a project.
 
-**Index in place.** `tier_sidecars.py` already writes a catalogue record beside
-a file it must not modify — that is how `4-Canon` works. Pointed at the library
-it would leave every PDF byte-identical and produce a findable catalogue. The
-limitation is real: it extracts text only from formats it reads cheaply, so
-PDFs would get keywords from filename and path alone. Findable by title, not by
-content. Wiring in `pdf_to_markdown.py`'s extraction is what would change that.
+It is a Reference corpus under `corpus-glossary.md` 1.1 — the shape was built
+before the vocabulary existed.
 
-**Actually mine it.** Nick's own framing, and his estimate of the cost: many of
-the games are not OCR'd, so this means OCR across a large collection and
-"tremendous work". Nothing is proposed.
+**Workflow, already scoped by Nick:** copy chosen books into `1-Raw`, run
+`ocrmypdf --skip-text` over them so text PDFs are left alone and only scans
+are processed, then digest normally. Nothing here needs new pipeline
+architecture.
 
-The reason to keep the distinction visible is that the first is a day and the
-second is a project, and they are easy to conflate when the phrase is "digest
-the RPG folder".
+**One pipeline change it does need.** `pdf_to_markdown.py` extracts every
+embedded image from every page. For a *scanned* book that is the whole book
+again as loose page images — a 300-page scan yields 300 full-page images for
+no search value whatsoever, since the text came from the OCR layer. Across the
+scanned half of a hundred books that is plausibly tens of gigabytes, and it
+all syncs to Drive. Needs a way to skip or threshold image extraction before
+this corpus is digested. Not built; the choice between "skip all images" and
+"skip images above a size" is Nick's.
+
+**Two smaller things worth knowing.**
+
+`batch_ocr.bat` writes over each file in place. That is correct here rather
+than dangerous, because `1-Raw` holds copies and the archive is untouched — if
+a file is damaged you re-copy it. But it sends errors to `nul`, so a book that
+fails OCR stays silently unchanged and nothing says which. Worth a log.
+
+`--skip-text` skips a page that already carries any text. How it treats a
+mixed book — scanned plates inside a text-layer PDF — is worth checking on one
+file before committing a batch to it. A question, not a known fault.
 
 ---
 

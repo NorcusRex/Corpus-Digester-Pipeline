@@ -1,6 +1,6 @@
 # Repository Structure
 
-**Version 2.3**
+**Version 2.4**
 
 The shared definition of the Drive repository's shape.
 
@@ -21,10 +21,15 @@ the index format, the completeness guarantee, and the ownership model.
 
 Not all structure is equally stable. Three classes, and the handling differs:
 
-**Architectural.** The four tier names, and the root named in project
-instructions. Assert and rely on these. Verify the root by checking that the
-four tiers sit beneath it; a named root without them is an error worth
-surfacing, not a folder to search anyway.
+**Architectural.** The tier names, and the root named in project instructions.
+Assert and rely on these.
+
+**Verify a root by checking that `1-Raw` and `2-Digested` sit beneath it.** A
+root carrying those two is a corpus. One carrying `3-Reporting` and `4-Canon` as
+well is a **Production** corpus; one carrying only the first two is a
+**Reference** corpus, which is valid rather than an error. A named root with
+neither of the first two is not a corpus, and searching inside it anyway is the
+failure this check exists to prevent.
 
 **Evolving.** Everything below the four tiers. Follows a pattern, but the
 pattern changes. **Enumerate at resolution time. Never resolve by name, never
