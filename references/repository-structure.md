@@ -1,6 +1,6 @@
 # Repository Structure
 
-**Version 2.4**
+**Version 2.5**
 
 The shared definition of the Drive repository's shape.
 
@@ -60,13 +60,15 @@ unsearchable.
 
 ## What a searcher can rely on
 
-**`2-Digested` covers everything in `1-Raw`.** Files the pipeline can convert
-appear as Markdown; files it cannot appear as a small Markdown sidecar
-recording the original's name, type and source path. Media accompanying a
-converted file is carried through beside it.
+**`2-Digested` is a complete catalog of `1-Raw` — not a complete copy.** Every
+raw file is accounted for one of three ways: converted to Markdown, carried
+through as media beside a converted file, or represented by a sidecar naming
+the original and its path.
 
-Search therefore reads three tiers rather than four, treating `1-Raw` as an
-escape hatch for originals rather than a routine target.
+**The distinction matters to a searcher.** A sidecar is findable; the file it
+names is not in `2-Digested`. So a search of three tiers finds everything that
+*exists*, and `1-Raw` is the escape hatch for the bytes — the original of a
+converted file, or the file a sidecar stands for.
 
 This is a property the pipeline provides, specified in its own
 `pipeline-conventions.md`. This document describes what a searcher meets; it

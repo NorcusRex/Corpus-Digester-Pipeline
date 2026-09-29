@@ -1,6 +1,6 @@
 # Corpus Glossary
 
-**Version 1.1**
+**Version 1.2**
 
 The corpus data model, shared by the skills that search it and by the digestion
 pipeline that builds it. Where any document disagrees with this file, this file
@@ -42,9 +42,11 @@ conversations.
 these four names are fixed; everything below them is enumerated, never assumed.
 
 - **`1-Raw`** — incoming material in any format, by any path.
-- **`2-Digested`** — pipeline output: converted, classified, indexed. Complete
-  with respect to `1-Raw`, because the pipeline copies through or sidecars
-  whatever it cannot convert.
+- **`2-Digested`** — pipeline output: converted, classified, indexed. **A
+  complete catalog of `1-Raw`, not a complete copy of it.** Everything in
+  `1-Raw` is accounted for — converted to Markdown, carried through as media, or
+  represented by a sidecar naming the original and its path — but the bytes of
+  an unconvertible file stay in `1-Raw`.
 - **`3-Reporting`** — derived writing: reports, transcripts, commentary.
   Derived rather than new, whatever produced it.
 - **`4-Canon`** — released artifacts. What the project produces.

@@ -33,8 +33,8 @@ source is drift, not a variant.
 
 | File | Version | Received | Canonical owner | Why the pipeline holds it |
 |---|---|---|---|---|
-| `corpus-glossary.md` | 1.1 | 2026-09-26 | AI Methods / `search-project-corpus` | Vocabulary the pipeline uses: corpus, repository, tier, sidecar, index, manifest |
-| `repository-structure.md` | 2.4 | 2026-09-26 | AI Methods / `search-project-corpus` | The contract the pipeline owes the searcher, and the `_index.json` format both parse |
+| `corpus-glossary.md` | 1.2 | 2026-09-29 | AI Methods / `search-project-corpus` | Vocabulary the pipeline uses: corpus, repository, tier, sidecar, index, manifest |
+| `repository-structure.md` | 2.5 | 2026-09-29 | AI Methods / `search-project-corpus` | The contract the pipeline owes the searcher, and the `_index.json` format both parse |
 | `project-manifest-format.md` | 1.4 | 2026-09-26 | AI Methods / `update-project-manifest` | Format of a real pipeline input, consumed by `claude_to_markdown.py` |
 
 All three are current as of the dates above.
@@ -85,6 +85,23 @@ at `docs/handoffs/2026-09-26__designer-response-3-federation.md`.
   can occur. Cost is linear in the number of corpora — slower, not worse.
 - **`search-google-drive` is parked.** Its motivating case was the RPG library,
   which turns out to have been built as a corpus before the word existed.
+
+### The catalog-not-copy round
+
+Both files came back again on 2026-09-29, taking a correction that went the
+other way — from Code to Design. The old wording, "`2-Digested` covers
+everything in `1-Raw`", could be read as promising the bytes are there. They
+are not: for an unconvertible file the sidecar is findable and the file it
+names stays in `1-Raw`. Glossary 1.2 and structure 2.5 both say **complete
+catalog, not complete copy**, and 2.5 spells out what that means for a
+searcher.
+
+The Designer also recorded why it had believed the completeness guarantee was
+still missing: it has no access to this repository and tracks its state from
+handoffs, so a claim about code never read outlived its truth by days. The
+stale version number on `pipeline-conventions.md` made that easy but did not
+cause it. Noted on both sides rather than fixed, since nothing follows for
+the files.
 
 **One provenance error, recorded not corrected.** The note attributes figures
 to the corpora report that it does not contain. See the foot of the cover note.
