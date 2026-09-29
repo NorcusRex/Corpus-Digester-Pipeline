@@ -1,15 +1,21 @@
 # Pipeline Conventions
 
-**Version 1.1**
+**Version 1.2**
 
 What the digestion pipeline writes: filenames, frontmatter, sidecars, and what
 it skips. Owned by this repository, and by nothing else — edit it freely as the
 code changes.
 
-Reconciled against the source on 2026-09-25. Where v1.0 was written as
+Reconciled against the source on 2026-09-25, and again on 2026-09-26 when the
+authored-tier passes and OCR were added. Where v1.0 was written as
 specification from outside the repository, this version states what the code
-does. Corrections from that pass are marked **[was wrong in v1.0]** so a reader
-of the earlier file can see what moved.
+does. Corrections from that first pass are marked **[was wrong in v1.0]** so a
+reader of the earlier file can see what moved.
+
+v1.2 adds *Authored tiers* and *Scanned PDFs*, both describing behaviour that
+did not exist when v1.1 was written. The version moved with the content, which
+is the rule this repository applies to the shared files and should not exempt
+its own.
 
 ## Scope
 
