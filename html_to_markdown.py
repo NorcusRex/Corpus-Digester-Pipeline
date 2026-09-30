@@ -45,7 +45,9 @@ from __future__ import annotations
 import argparse
 import base64
 import re
+import shutil
 import sys
+import urllib.parse
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -525,16 +527,55 @@ _MIME_TO_EXT = {
 }
 
 
-def make_image_handler(media_dir: Path, basename: str):
-    """Return a closure that handles <img src=...> attributes by extracting
-    base64-encoded inline images to disk and returning a Markdown link."""
+def make_image_handler(media_dir: Path, basename: str,
+                       src_dir: Path | None = None):
+    """Return a closure that handles <img src=...> attributes.
+
+    Three kinds of source are handled:
+
+    * base64 `data:` URLs -- decoded and written to <basename>_media/
+    * relative paths -- as produced by a browser-saved page with its
+      companion `_files/` folder; copied into <basename>_media/ when the
+      file is found next to the HTML
+    * http(s) URLs -- left as remote links
+
+    A relative path passed through unchanged would resolve against the OUTPUT
+    location rather than the original, so the link would silently break. The
+    file is copied instead, which is the same treatment data: URLs already get.
+    """
     media_dir_created = [False]
     counter = [0]
+    # Resolved source path -> filename already written, so a page referencing
+    # the same asset repeatedly copies it once.
+    copied: dict[Path, str] = {}
 
     def _ensure_dir() -> None:
         if not media_dir_created[0]:
             media_dir.mkdir(parents=True, exist_ok=True)
             media_dir_created[0] = True
+
+    def _resolve_local(src: str) -> Path | None:
+        """Resolve a relative src against the HTML file's folder.
+
+        Returns None unless the result is an existing file inside that folder.
+        Confining it there keeps a crafted `../../..` path in someone else's
+        saved page from reaching outside the tree we were asked to convert.
+        """
+        if src_dir is None:
+            return None
+        # Drop any query string or fragment, then undo URL escaping so
+        # "my%20image.png" finds "my image.png".
+        cleaned = src.split("#", 1)[0].split("?", 1)[0]
+        cleaned = urllib.parse.unquote(cleaned)
+        if not cleaned or cleaned.startswith(("data:", "file:", "/")):
+            return None
+        try:
+            base = src_dir.resolve()
+            candidate = (base / cleaned).resolve()
+            candidate.relative_to(base)
+        except (OSError, ValueError):
+            return None
+        return candidate if candidate.is_file() else None
 
     def handler(src: str, alt: str) -> str:
         if not src:
@@ -560,7 +601,24 @@ def make_image_handler(media_dir: Path, basename: str):
             (media_dir / filename).write_bytes(data)
             return f"![{alt}]({media_dir.name}/{filename})"
 
-        # Anything else (relative path, file:, etc.): pass through unchanged.
+        # Relative path into a saved page's companion folder: copy it in.
+        local = _resolve_local(src)
+        if local is not None:
+            if local in copied:
+                return f"![{alt}]({media_dir.name}/{copied[local]})"
+            counter[0] += 1
+            ext = local.suffix.lower() or ".bin"
+            filename = f"{basename}_img{counter[0]:04d}{ext}"
+            _ensure_dir()
+            try:
+                shutil.copy2(local, media_dir / filename)
+            except OSError as e:  # noqa: BLE001
+                print(f"  [warn] could not copy {local}: {e}", file=sys.stderr)
+                return f"![{alt}]({src})"
+            copied[local] = filename
+            return f"![{alt}]({media_dir.name}/{filename})"
+
+        # Anything else (file:, absolute path, missing target): pass through.
         return f"![{alt}]({src})"
 
     return handler
@@ -576,7 +634,8 @@ def convert_html(in_path: Path, out_dir: Path, basename: str) -> tuple[dict, str
     text = in_path.read_text(encoding="utf-8", errors="replace")
 
     media_dir = out_dir / f"{basename}_media"
-    img_handler = make_image_handler(media_dir, basename)
+    # The HTML file's own folder is where a saved page keeps its assets.
+    img_handler = make_image_handler(media_dir, basename, in_path.parent)
 
     parser = _MDConverter(image_handler=img_handler)
     parser.feed(text)

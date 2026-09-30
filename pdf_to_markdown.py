@@ -58,6 +58,12 @@ import re
 import sys
 from pathlib import Path
 
+# Below this many characters a page is treated as carrying no text. Shared
+# with ocr_pdf.py, which uses the same floor to decide what to OCR -- two
+# thresholds that drifted apart would mean a page flagged as scanned that OCR
+# was never asked to look at.
+CHARS_PER_PAGE_FLOOR = 20
+
 try:
     import pypdf
     from pypdf.generic import IndirectObject
@@ -358,7 +364,8 @@ def clean_page_text(text: str) -> str:
 
 
 def render_page(page, page_num: int, media_dir: Path,
-                seen_hashes: set) -> tuple[str, int, int]:
+                seen_hashes: set,
+                extract_images: bool = True) -> tuple[str, int, int]:
     """Render one page; return (markdown, image_count, annotation_count)."""
     parts = [f"## Page {page_num}", ""]
 
@@ -373,7 +380,8 @@ def render_page(page, page_num: int, media_dir: Path,
         parts.append(text)
 
     # Images
-    image_paths = extract_page_images(page, page_num, media_dir, seen_hashes)
+    image_paths = (extract_page_images(page, page_num, media_dir, seen_hashes)
+                   if extract_images else [])
     if image_paths:
         parts += ["", "### Images on this page", ""]
         for rel in image_paths:
@@ -402,9 +410,20 @@ def render_page(page, page_num: int, media_dir: Path,
 # File-level conversion
 # ---------------------------------------------------------------------------
 
-def convert_pdf(in_path: Path, out_dir: Path, basename: str
+def convert_pdf(in_path: Path, out_dir: Path, basename: str,
+                ocr_pages: dict | None = None,
+                extract_images: bool = True,
                 ) -> tuple[dict, str]:
-    """Convert one PDF; extract images/attachments to out_dir/<basename>_media/."""
+    """Convert one PDF; extract images/attachments to out_dir/<basename>_media/.
+
+    `ocr_pages` maps 1-based page numbers to text recovered by OCR. It is used
+    only where the page itself yields none, so a PDF with a real text layer is
+    never overridden by a worse reading of the same page.
+
+    `extract_images` False skips image extraction entirely. For a scanned book
+    every page image *is* the page, so extracting them duplicates the whole
+    document as loose files for no search value.
+    """
     media_subdir = f"{basename}_media"
     media_dir = out_dir / media_subdir
 
@@ -456,6 +475,9 @@ def convert_pdf(in_path: Path, out_dir: Path, basename: str
     total_annotations = 0
     extracted_text_chars = 0
 
+    ocr_pages = ocr_pages or {}
+    ocr_pages_used = 0
+
     pages_md: list[str] = []
     for i, page in enumerate(reader.pages, start=1):
         # Only create media dir if a page actually produces images.
@@ -463,15 +485,25 @@ def convert_pdf(in_path: Path, out_dir: Path, basename: str
         if not media_dir_created and any(True for _ in page.images):
             page_media = ensure_media()
         # Note: iterating page.images twice can be expensive; keep the call simple.
-        md, n_img, n_ann = render_page(page, i, ensure_media(), seen_image_hashes)
+        md, n_img, n_ann = render_page(page, i, ensure_media(),
+                                       seen_image_hashes,
+                                       extract_images=extract_images)
+        # Track extracted text volume to flag scanned PDFs in frontmatter.
+        page_chars = 0
+        try:
+            page_chars = len(page.extract_text() or "")
+        except Exception:
+            pass
+        extracted_text_chars += page_chars
+        # Fall back to OCR only where the page gave nothing itself. A page
+        # with a real text layer keeps it: OCR of an already-digital page is
+        # a worse reading of the same thing.
+        if page_chars < CHARS_PER_PAGE_FLOOR and ocr_pages.get(i):
+            md = md.rstrip() + "\n\n" + ocr_pages[i].strip()
+            ocr_pages_used += 1
         pages_md.append(md)
         total_images += n_img
         total_annotations += n_ann
-        # Track extracted text volume to flag scanned PDFs in frontmatter.
-        try:
-            extracted_text_chars += len(page.extract_text() or "")
-        except Exception:
-            pass
 
     body_parts.extend(pages_md)
 
@@ -488,8 +520,22 @@ def convert_pdf(in_path: Path, out_dir: Path, basename: str
     fm["text_extracted_chars"] = extracted_text_chars
 
     # Heuristic: pages exist but virtually no text came out → likely scanned.
-    if fm["page_count"] > 0 and extracted_text_chars < 20 * fm["page_count"]:
+    if fm["page_count"] > 0 and extracted_text_chars < CHARS_PER_PAGE_FLOOR * fm["page_count"]:
         fm["likely_scanned"] = True
+
+    # Whole-document OCR, where the sidecar carried no page breaks: append it
+    # once rather than losing it.
+    if ocr_pages and not ocr_pages_used and ocr_pages.get(1) \
+            and fm.get("likely_scanned"):
+        body_parts += ["", "## Recovered text (OCR)", "",
+                       ocr_pages[1].strip()]
+        ocr_pages_used = 1
+
+    if ocr_pages_used:
+        fm["ocr_pages"] = ocr_pages_used
+        fm["text_source"] = "ocr" if extracted_text_chars == 0 else "mixed"
+    if not extract_images:
+        fm["images_skipped"] = True
 
     body = "\n\n".join(p for p in body_parts if p != "")
     return fm, body
@@ -518,6 +564,10 @@ def _allocate_basename(out_dir: Path, stem: str) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Convert .pdf files to Markdown (lossless).")
     ap.add_argument("input", help="A .pdf file or a directory of .pdf files")
+    ap.add_argument("--no-images", action="store_true",
+                    help="Do not extract embedded images. For a scanned book "
+                         "every page image is the page itself, so extracting "
+                         "them duplicates the whole document for no gain.")
     ap.add_argument("-o", "--output", default="pdf_md",
                     help="Output directory (default: ./pdf_md)")
     ap.add_argument("-r", "--recursive", action="store_true",
@@ -537,7 +587,8 @@ def main() -> int:
     for f in files:
         basename = _allocate_basename(out_dir, f.stem)
         try:
-            fm, body = convert_pdf(f, out_dir, basename)
+            fm, body = convert_pdf(f, out_dir, basename,
+                                    extract_images=not args.no_images)
         except Exception as e:  # noqa: BLE001
             print(f"[skip] {f}: {e}", file=sys.stderr)
             skipped += 1

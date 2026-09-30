@@ -32,6 +32,12 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+import chatgpt_assets  # noqa: E402
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -78,8 +84,14 @@ def date_only(ts) -> str:
 # Message extraction
 # ---------------------------------------------------------------------------
 
-def extract_text(message: dict) -> str:
-    """Return the message text, joining multi-part content with newlines."""
+def extract_text(message: dict, sink=None) -> str:
+    """Return the message text, joining multi-part content with newlines.
+
+    A part carrying `text` is used as-is; that covers `audio_transcription`,
+    so spoken content has always come through. A part without text names an
+    asset instead, and `sink` is what turns that name into a link. Without a
+    sink the part is still named rather than silently dropped.
+    """
     if not message:
         return ""
     content = message.get("content") or {}
@@ -89,15 +101,20 @@ def extract_text(message: dict) -> str:
         if isinstance(p, str):
             out.append(p)
         elif isinstance(p, dict):
-            # Multimodal: try text field, else placeholder so nothing is lost.
             t = p.get("text")
             if t:
                 out.append(t)
             else:
-                ctype = p.get("content_type") or "non-text"
-                out.append(f"[{ctype} content omitted]")
+                out.append(chatgpt_assets.render_part(p, sink))
         else:
             out.append(str(p))
+
+    # Uploaded attachments hang off message.metadata, not content.parts, so
+    # nothing used to see them at all -- not even a placeholder.
+    attach = chatgpt_assets.render_attachments(message, sink)
+    if attach:
+        out.append(attach)
+
     return "\n".join(out).strip()
 
 
@@ -110,13 +127,13 @@ def role_label(message: dict) -> str:
     return f"{role}:{name}" if (role == "tool" and name) else role
 
 
-def render_node(node: dict, include_meta: bool = True) -> str:
+def render_node(node: dict, include_meta: bool = True, sink=None) -> str:
     """Render a single message node as a Markdown block, or '' if empty/skip."""
     msg = node.get("message")
     if not msg:
         return ""
     role = role_label(msg)
-    text = extract_text(msg)
+    text = extract_text(msg, sink)
 
     # ChatGPT seeds conversations with empty system stubs; drop them silently.
     if not text and role.startswith("system"):
@@ -225,8 +242,14 @@ def _latest_message_time(mapping: dict) -> str:
     return fmt_ts(latest) if latest is not None else ""
 
 
-def render_conversation(conv: dict) -> tuple[dict, str, str]:
-    """Return (frontmatter_dict, body_str, date_string)."""
+def render_conversation(conv: dict, sink=None) -> tuple[dict, str, str]:
+    """Return (frontmatter_dict, body_str, date_string).
+
+    `sink` is an optional `chatgpt_assets.AssetSink`. Given one, asset
+    pointers resolve to links and the caller must call `sink.flush(md_path,
+    body)` once the output path is known -- the media folder is named after
+    the Markdown file, which is not decided until after rendering.
+    """
     title = conv.get("title") or "Untitled conversation"
     mapping = conv.get("mapping") or {}
     current = conv.get("current_node")
@@ -235,7 +258,7 @@ def render_conversation(conv: dict) -> tuple[dict, str, str]:
     rendered: list[str] = []
     rendered_ids: set[str] = set()
     for nid in path:
-        block = render_node(mapping[nid])
+        block = render_node(mapping[nid], sink=sink)
         if block:
             rendered.append(block)
             rendered_ids.add(nid)
@@ -245,7 +268,7 @@ def render_conversation(conv: dict) -> tuple[dict, str, str]:
     for nid, node in mapping.items():
         if nid in rendered_ids:
             continue
-        block = render_node(node)
+        block = render_node(node, sink=sink)
         if block:
             leftovers.append(block)
 
@@ -547,6 +570,13 @@ def main() -> int:
     out_dir = Path(args.output)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # Asset files sit beside conversations.json, so the export root is that
+    # file's folder. Indexed once, before the loop.
+    asset_index = chatgpt_assets.AssetIndex(in_path.parent)
+    if asset_index.files_scanned:
+        print(f"Asset index: {len(asset_index.by_id):,} id(s) from "
+              f"{asset_index.files_scanned:,} file(s)")
+
     with in_path.open(encoding="utf-8") as f:
         data = json.load(f)
 
@@ -556,11 +586,14 @@ def main() -> int:
 
     written = 0
     skipped = 0
+    linked = 0
+    missing = 0
     for i, conv in enumerate(data):
         if args.limit and written >= args.limit:
             break
+        sink = chatgpt_assets.AssetSink(asset_index)
         try:
-            fm, body, dstr = render_conversation(conv)
+            fm, body, dstr = render_conversation(conv, sink=sink)
         except Exception as e:  # noqa: BLE001 — keep going through the export
             print(f"[skip] conversation {i}: {e}", file=sys.stderr)
             skipped += 1
@@ -579,6 +612,13 @@ def main() -> int:
             out_file = target_dir / f"{dstr}__{slug}-{n}.md"
             n += 1
 
+        body = sink.flush(out_file, body)
+        if sink.resolved:
+            fm["assets_linked"] = sink.resolved
+        if sink.unresolved:
+            fm["assets_missing"] = sink.unresolved
+        linked += sink.resolved
+        missing += sink.unresolved
         out_file.write_text(
             to_yaml_frontmatter(fm) + "\n\n" + body + "\n",
             encoding="utf-8",
@@ -590,6 +630,9 @@ def main() -> int:
         print(f" ({skipped} skipped — see stderr)")
     else:
         print()
+    if linked or missing:
+        print(f"Assets: {linked:,} linked, {missing:,} referenced but not "
+              f"present in the export")
     return 0
 
 

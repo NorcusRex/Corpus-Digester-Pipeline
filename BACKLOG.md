@@ -1,0 +1,748 @@
+# Backlog
+
+Open work and open questions, from the digester handoff (v6.8) and from
+findings while implementing it.
+
+**Organised by who is blocked**, not by category, so the live items are at the
+top and the finished ones are out of the way. Closed entries are kept rather
+than deleted — several of them correct a claim in the handoff, and that
+reasoning is worth being able to find.
+
+## At a glance
+
+| # | Item | Blocked on |
+|---|---|---|
+| 1 | Test the branch, then merge PR #1 to `main` | Nick |
+| 2 | Read the rejected-keyword report after the first digest | Nick |
+| 3 | Review the Drive collision report, then delete the Sheets | Nick |
+| 4 | Choose which books go in the RPG search library | Nick |
+| 5 | Multi-word keywords | Nick and Claude, after the first digest |
+| — | Acceptance tiers 1–4 | Out of scope — the reporting skill's job |
+
+---
+
+# Waiting on Nick
+
+## 1. Test the branch, then merge PR #1 to `main`
+
+Everything from this session is on `claude/vigilant-davinci-amht34` and
+nothing has reached `main`. The branch is the version to test against — `main`
+has none of it: no delete guardrails, no rename detection, no OCR, no
+splitters.
+
+**Most of it has met fixtures, not a corpus.** The OCR pass has never run
+against a real `ocrmypdf` or a working `pypdf`; the ChatGPT splitter and asset
+resolution have never seen the real export; `stamp_tier.py`,
+`subset_inventory.py` and `split_export.py` were tested against files made up
+for the purpose.
+
+Expect the first real digest to find things. Every contact with real data
+this session did: 433 "lost images" that turned out to be horizontal rules, a
+keyword filter discarding `clock`, two pointer schemes where one was assumed,
+an import guard that would have killed an entire run. That is the reason to
+treat the first run as a test rather than a delivery.
+
+## 2. Read the rejected-keyword report after the first digest
+
+**The one to do first.** It is the only open item where the current code could
+be quietly doing damage — throwing away real words — and the audit that settles
+it takes one run.
+
+Decision 8 is built. Rejection runs in two tiers, and only the second is in
+question.
+
+**Hard tests** cover shapes no English word takes: no vowel (counting `w`, so
+Welsh survives), letters mixed with digits, `q` not followed by `u`, a letter
+three times running, a seven-consonant run. Safe with no other evidence, and
+not in doubt.
+
+**Soft tests** are implausible letter sequences — an impossible letter pair, a
+six-consonant run — rejected only when nothing vetoes them. A veto is the term
+appearing in a lexicon, appearing capitalised mid-sentence, or recurring across
+three or more documents.
+
+The soft tier needs judging for two reasons. It is the tier that can throw away
+a real word. And it is the tier doing the work: of the four artifacts the
+handoff names, the hard tests catch two and the soft tests catch the other two.
+
+**How to settle it.** The report is now written on every run — `AUDIT=1` is the
+wrapper's default, because it costs nothing (it records what the metadata pass
+already decided) and because forgetting the flag was the only thing standing
+between this and an answer. Open `_rejected-keywords.md` at the corpus root
+after your first Loom digest and read the *Soft rejections* table. Anything
+real in it is a false positive, and the answer is either a lexicon entry or
+dropping the tier.
+
+**Why synthetic testing is not enough.** Two false-positive bugs were found and
+fixed during implementation, both invisible to the fixtures that were passing at
+the time. The first used vowel ratio and threw away `clock`, `clocks` and
+`handling` — `kxwoj` and `clock` have identical vowel ratios, so counting vowels
+cannot separate them. The second read sentence-initial capitals as evidence of a
+proper noun, which protected whatever happened to open a sentence and put `the`
+in the harvested name list. A third of the same kind is likelier than not.
+
+**On the dictionary.** It is currently unexercised. With no lexicon, no corpus
+statistics and no body text, the present tests catch all eight test artifacts
+and lose none of twenty-four real words, so nothing in testing has yet needed a
+veto. Its value is protection for real words the test set does not contain,
+which is exactly what the audit will reveal. An earlier claim that the
+dictionary was "earning its place" was made about the vowel-ratio version and
+was not revisited after that version was replaced; it was also circular, since
+the dictionary passed to that test was built from the test's own answer key.
+
+## 3. Review the Drive collision report, then delete the Sheets
+
+**Blocks the first Loom push**, which is step 3 of the plan. `.xlsx` files
+colliding with same-named native Google Sheets make rclone fail:
+`can't update google document type without --drive-import-formats`. Adding
+that flag does not fix it — it converts the local `.xlsx` into a Sheets
+update and silently discards Excel-only features. It was tried and rolled
+back once already.
+
+```
+python drive_collisions.py drive:RPG/_Design/Loom --local I:\RPG\_Design\Loom --report collisions.md
+```
+
+Read `collisions.md`, delete the Sheets it lists as safe. The rule is yours
+and the script does not deviate from it: the Sheet goes only where the
+`.xlsx` is newer than or equal to it. Where the Sheet is newer, someone
+edited it in Drive and those edits are not in the local file.
+
+The script never deletes. The match is a heuristic on filenames and the
+thing being deleted is the only copy of any Sheets-side edit, so it reports
+and you decide.
+
+It also lists separately any Sheet whose *title* ends in `.xlsx`. A hand-made
+conversion is titled without the extension, so those are most likely debris
+from the `--drive-import-formats` run rather than anything deliberate — the
+distinction the inherited note could not make.
+
+## 4. Choose which books go in the RPG search library
+
+**Reference corpus, scoped, not started.** No longer "someday, tremendous
+work" — the premise was wrong on both sides.
+
+**The archive is not the corpus.** `I:\RPG` is 96,774 files, 11,463 folders,
+1.15 TB, roughly a thousand games. `I:\RPG\_SearchLibrary` is a different
+thing: a corpus skeleton Nick already built, carrying `1-Raw` and `2-Digested`
+with placeholder files and a `batch_ocr.bat` pointing at the raw tier. `1-Raw`
+is a destination you copy chosen books into. The Designer puts the wanted set
+at **fewer than 100 books**, which is an overnight job rather than a project.
+
+It is a Reference corpus under `corpus-glossary.md` 1.1 — the shape was built
+before the vocabulary existed.
+
+**Workflow, already scoped by Nick:** copy chosen books into `1-Raw`, run
+`ocrmypdf --skip-text` over them so text PDFs are left alone and only scans
+are processed, then digest normally. Nothing here needs new pipeline
+architecture.
+
+**The pipeline now handles the scanned half itself.** `--ocr` was built after
+this entry was written: see *OCR is a pipeline pass now* in the closed items.
+`--no-pdf-images` was built with it, for the duplication problem below.
+
+**Still worth knowing.** `--skip-text` skips a page that already carries any
+text. How it treats a mixed book — scanned plates inside a text-layer PDF — is
+worth checking on one file before committing a batch to it. A question, not a
+known fault, and one only a real `ocrmypdf` can answer.
+
+**What remains here is yours, not the code's:** choosing which books go in
+`1-Raw`.
+
+---
+
+# Joint
+
+## 5. Multi-word keywords
+
+**Ruled in by Nick. Nick and Claude together, after the first digest.**
+
+Joint for two reasons rather than one. The scope needs a ruling only real
+output can inform — how aggressive to be about phrases — and the tuning needs
+the same corpus statistics the soft-tier audit needs. Both follow the first
+digest for the same reason: there is nothing to judge until there is output
+to judge.
+
+The requirement existed in `repository-structure.md` v1.11 — "Most keywords are
+multi-word" — and vanished when the conventions were split: v2.1 removed the
+Frontmatter section and `pipeline-conventions.md` inherited only "a list of
+quoted strings". The pipeline emits single words, so nothing is currently
+violating a rule; the rule had simply stopped existing. The Designer accepted
+the finding and left it out of 2.3 deliberately. When it is picked up, the
+requirement belongs in `pipeline-conventions.md`, which the pipeline owns.
+
+**Scope.** Generate n-gram candidates that do not cross punctuation, reject ones
+bounded by stopwords, and score them alongside unigrams. TF-IDF handles n-grams
+unchanged, and the lexicon already accepts multi-word entries.
+
+**One step of the original sketch is wrong, corrected by the Designer.** It
+proposed dropping single words that a chosen phrase covers. That discards
+evidence: a word occurring fifty times, ten of them inside a phrase, has earned
+its own entry on the other forty. Score phrases and single words independently
+and keep both where both earn a place.
+
+**What it is worth.** Better browsing. It would not have prevented the retrieval
+failure that started this — that was conjunctive queries and searching in the
+wrong vocabulary, both on the searcher's side.
+
+---
+
+# Out of scope for the pipeline
+
+## Acceptance tiers 1–4 — Decision 1
+
+**Not deferred work. These belong to the reporting skill, and the pipeline
+cannot have them.** Nick's ruling, and it draws the line in the right place.
+
+Tiers 1–4 turn on whether the subject endorsed or objected after referring to
+something. The evidence for that is indirect: tone, hedging, what a "yes, but"
+is actually conceding, a partial agreement that accepts one clause and rejects
+another. An AI reading the passage can weigh it. Procedural code cannot, and a
+marker list that pattern-matches "agreed" and "no" would be confidently wrong
+on exactly the cases that matter.
+
+So the split is by what each tool can honestly judge:
+
+| | Assigns | How |
+|---|---|---|
+| **Pipeline** | nothing on this scale | It weights by whose turn a term appears in, not by acceptance |
+| **Reporting skill** | tiers 1–4, and the rest | Semantic — an AI reading the exchange |
+
+**The pipeline no longer uses the acceptance scale at all.** It was simplified
+to a single question: does this term appear anywhere in the subject's turns?
+Yes gets 128, no gets 1. See *Keyword weighting* under the closed items for
+why, and for the failure that simplification removed.
+
+Nick has been declaring agreement more explicitly, and has added styles of
+partial agreement. Both are for the reporting skill to read. Neither is
+something the pipeline attempts to interpret.
+
+---
+
+# Operational notes
+
+Awareness rather than work.
+
+## Source identity only populates on re-digestion
+
+`source_sha256` and `source_bytes` are written at digestion time, so existing
+digested output does not carry them. Until a re-run, a renamed source still
+reports as absent rather than as a rename — correctly, since there is nothing
+to match on. No action needed beyond knowing why the first run after this
+change reports differently from the one before it.
+
+Found the hard way: `Creatures (Abortions)：  Undead.docx` was reported as
+having no source in `1-Raw`, when the raw file had simply been renamed to
+`Creatures (Aberrations)：  Undead.docx`. Under the old delete behaviour a
+spelling fix would have destroyed good output.
+
+---
+
+# Closed, with the evidence
+
+Kept because the reasoning is worth finding again, not because anything is
+pending.
+
+## Authored tiers are stamped and catalogued
+
+**Closed.** Nick's ruling: the pipeline should add metadata to `3-Reporting`
+and `4-Canon` files that do not already have complete metadata. Two different
+mechanisms, because only one of those tiers can be touched.
+
+**`3-Reporting` is stamped in place** by the new `stamp_tier.py`, which fills
+in missing fields and leaves present ones alone. A hand-written title survives;
+a file that is already complete comes out byte-identical. No index block is
+inserted — right for a converted conversation, wrong for authored prose — and
+keywords are computed over `3-Reporting` alone, since TF-IDF is relative to the
+body measured and a report's distinctive terms should be distinctive among
+reports.
+
+**Found while testing:** the metadata pass never writes `source`. In
+`2-Digested` the converter supplies it; an authored file has no converter, so
+the field was simply never set, and every unstamped file in `3-Reporting` would
+have kept failing the self-check with no explanation. `stamp_tier.py` sets it
+to `authored`, which is the most the pipeline can honestly claim.
+
+**`4-Canon` is catalogued rather than stamped.** This departed from the
+instruction as worded, so it was raised rather than done quietly: released
+artifacts are not modified — Nick's own earlier ruling — and most of them are
+not Markdown and could not carry frontmatter at all. The companion record
+`tier_sidecars.py` writes carries the same four fields, so the artifact becomes
+findable without its bytes changing. **Nick confirmed this reading**, so it is
+settled rather than a standing exception.
+
+**One real bug fixed there.** `tier_sidecars.py` treated any Markdown artifact
+with *any* frontmatter as self-describing and skipped it. An older artifact
+carrying a bare `title:` therefore got no sidecar and was invisible to search,
+while looking finished. Completeness is now the test.
+
+**The audit report is on by default.** `AUDIT=1` in the wrapper, because it
+costs nothing and forgetting the flag was the only obstacle to item 1.
+
+## `3-Reporting` stays out of the GitHub canon repo
+
+**Nick's ruling: no.** Answered 2026-09-26, closing a question open since the
+pipeline's first conversation and recorded there as Indeterminate — that chat
+argued against including it, on the grounds that pipeline-generated content
+makes noisy commits, and Nick had not responded either way.
+
+Kept because a non-answer that hardens into a decision is indistinguishable
+from a decision until someone asks. This one was asked and answered, so the
+record now says which it is.
+
+`4-Canon` in a GitHub repository remains the plan. Nothing in the pipeline
+changes: it has never written to `4-Canon` and does not write to a repository
+at all.
+
+## OCR is a pipeline pass now
+
+**Built as `ocr_pdf.py`, behind `--ocr`.** Nick's call: OCR belongs in the
+general pipeline, so scanned PDFs stop being a hole in every corpus rather
+than a problem solved once for the RPG library.
+
+**The design decision was where the text goes.** A hand-rolled batch script
+runs `ocrmypdf` over the raw tree and overwrites each file. That is safe when
+`1-Raw` holds copies, as it does for the RPG library, and wrong as general
+pipeline behaviour, because `1-Raw` holds incoming material and for most
+corpora those are the originals. So nothing is modified: `ocrmypdf` writes a
+text sidecar, the text is cached, the OCR'd PDF is discarded.
+
+**The cache is keyed on content hash**, in `_ocr-cache` at the corpus root —
+excluded from digestion, and outside `2-Digested` so a `--clean` rebuild does
+not throw it away. A renamed, moved or re-copied book is still a hit. Editing
+the PDF invalidates it, which is the only thing that should.
+
+**OCR never overwrites a real text layer.** It is used per page, only where
+the page itself yielded nothing. `text_source` records `ocr` or `mixed`.
+
+**Failures are named**, in `_ocr-problems.md` and the run summary. A book that
+OCRs to nothing is recorded but not cached, so a better scan of it is tried
+again instead of being permanently remembered as empty.
+
+Runs several files at once, because `ocrmypdf` calls are independent and that
+is the difference between an overnight job and a weekend one.
+
+**A bug in existing code, found by the test container.** Both here and in
+`process_folder.py`, the optional pypdf import was guarded with
+`except ImportError`. A pypdf whose native crypto backend is broken raises a
+pyo3 `PanicException`, which inherits from `BaseException` and sails past it —
+so a broken install took down the entire digest run rather than just skipping
+PDFs. This machine has exactly that install, which is how it surfaced. Both
+guards now catch `BaseException` and re-raise `KeyboardInterrupt`.
+
+**Tested, with one real gap.** The batch driver, the cache, the hash-keyed
+rename survival, the parallel path, the failure log, the empty-result
+handling and the page splitting were all exercised against a stub `ocrmypdf`.
+The real `ocrmypdf` invocation and the pypdf-based scanned-or-not probe were
+**not** run, because neither is installed in the container that wrote this.
+First live run should be `--ocr --dry-run` on a handful of books.
+
+## ChatGPT assets, resolved against a measured export
+
+**Closed, both the inspection and the build.** Nick ran
+`inspect_chatgpt_assets.py` against the 2026-04-29 export — the last one,
+since ChatGPT is no longer in use, so its format is permanent rather than a
+moving target. The output is kept, redacted, in `docs/findings/`.
+
+Three facts it settled that would otherwise have been guessed wrong:
+
+**Two pointer schemes, not one.** `file-service://file-<id>` for images and
+uploads, `sediment://file_<32hex>` for audio and voice mode — hyphen against
+underscore, mixed-case alphanumeric against lowercase hex. A resolver written
+for the first would have silently missed 276 audio and 275 voice pointers.
+This is exactly why the build waited on the measurement.
+
+**Pointers nest.** `real_time_user_audio_video_asset_pointer` holds its
+pointers inside `audio_asset_pointer`, `frames_asset_pointers` and
+`video_container_asset_pointer`. The resolver walks each part recursively
+rather than reading known keys, since the nesting keys are not stable across
+versions.
+
+**A part's `content_type` is the part's name, not a media type** — the literal
+string `image_asset_pointer`. So it cannot supply an extension, and 114 files
+have none, which matters because nothing renders an extensionless image.
+Found by testing: the first version confidently produced `.bin`. Extensions
+now come from the source filename, then a real `mime_type`, then the file's
+first bytes.
+
+**What cannot be recovered.** ChatGPT does not export the bytes of files you
+uploaded. Two PDFs sit on disk against attachment entries naming several, and
+every unmatched sample was an attachment id. Those become a named marker
+carrying the filename and MIME type rather than silence. Attachments also hang
+off `message.metadata` rather than `content.parts`, so nothing saw them at all
+before this.
+
+**A correction to the premise.** The old "1,446 uncarried files" figure was
+never fully carryable. What exists is 1,424 files on disk, 1,417 addressable
+by an id in their filename.
+
+**And one thing that was never broken.** `audio_transcription` parts carry
+`text`, which the converter has always used, so 551 spoken passages were
+already in the output. Only the audio files themselves were missing.
+
+## The export is split before conversion, not after
+
+**Built for Claude as `split_export.py`.** Nick's question — why can't the
+first pass skip the conversion? — and the answer turned out to be that nothing
+prevented it.
+
+Grouping never needed a converter. Which conversation belongs to which project
+is a plain read of the manifests in `projects/`. The two were coupled only
+because grouping was added inside the converter's write loop, which already
+existed. The splitter filters `conversations.json` by that map and writes one
+complete export per project, so conversion happens once, in the corpus that
+keeps the material — and each corpus's `1-Raw` holds real raw export JSON
+rather than Markdown already digested once, which is what `1-Raw` is defined
+to hold.
+
+**Rulings carried into it.** Ungrouped conversations go to `_ungrouped/` and
+are selectable like anything else. `users.json` is copied whole, being
+identical everywhere. Memory is split by scope rather than copied: a project's
+own entry travels with it, the account-level conversations memory goes to
+`_ungrouped`. That last is not fussiness — copying every project's memory into
+every corpus is the provenance-boundary failure federation was chosen to
+avoid, at a smaller scale.
+
+**One bug found in testing, worth recording.** `_ungrouped/` had no `projects/`
+folder, and `is_claude_export` requires one. Without it the split was not
+recognised as an export, its `conversations.json` fell through the converter
+dispatch, and every ungrouped conversation would have become a single sidecar.
+Silent, and exactly the class of failure this round has been about. The
+splitter now always creates `projects/`, empty where there is nothing to put
+in it.
+
+**ChatGPT's writer is built too**, media included: each split carries only the
+asset files its own conversations reference. A second bug found in testing —
+the splitter collected pointer URLs but not uploaded-attachment ids, which are
+bare rather than URL-shaped, so an attachment that *was* on disk would have
+been left behind. Evernote needs no writer: its export is already one HTML
+file per note.
+
+## The archive run does work nobody reads
+
+**Closed by `--archive-only`.** Nick's finding: two digestions into two corpora
+is wasteful if the full treatment runs in both, and the detailed passes are
+unnecessary in an archive that is never uploaded or searched.
+
+Correct, and the worst of it was the most expensive pass in the pipeline. The
+metadata pass scans every file to build TF-IDF document frequencies, then
+rewrites every file — and the keywords it produces are discarded, because
+TF-IDF is corpus-relative and the receiving corpus recomputes its own against a
+different vocabulary. The NotebookLM sidecars doubled the archive's file count
+to produce files that are re-derived downstream. `_index.json` read every
+output file in full to build something only search reads.
+
+`--no-index` is new; `--no-metadata` and `--no-nlm` already existed but nothing
+said to use them together or why. `--archive-only` is the three of them, and
+`ARCHIVE_ONLY=1` in the wrapper adds it and also skips the `4-Canon` catalogue
+and the self-check — the latter because it would report the missing frontmatter
+and missing index as faults when they are the intended state.
+
+What survives is what selection needs: conversion, project grouping, and the
+name map. About four reads and two writes per file come off the archive run.
+
+**A larger version of this is not built.** Splitting the raw export by project
+*before* conversion would remove the second conversion entirely, and would put
+real raw JSON in each corpus's `1-Raw` instead of once-digested Markdown, which
+matches the tier definition better. It is the right architecture and it is real
+work — two export schemas to track, attachment routing, a home for ungrouped
+conversations. Raised, not scheduled.
+
+## Selection, and the three silent failures around it
+
+**Closed.** Four changes, all from one thread: you cannot control what an AI
+export contains, so selecting from it is the real work, and three of the ways
+it went wrong were silent.
+
+**`subset_inventory.py` is new.** `sync_subset.py` mirrors folders you name;
+this reports what the names are. Per selectable folder: file count, Markdown
+count, size, and the span of dates it covers. Given selection lists it also
+says which lists claim each folder, **which folders nothing claims**, and which
+list entries name a folder that is not there.
+
+The unclaimed list is why it exists. A project nobody selected is not an error
+anywhere in the pipeline — it simply never reaches a corpus, and the only
+symptom is a search finding nothing and being unable to say why. The rest is
+convenience.
+
+**The project-name map now says where it looked.** `process_folder.py` printed
+nothing at all when `project_names.tsv` was absent — the code comment read
+`# Silent skip if TSV doesn't exist`. A mistyped `--rename-tsv` path looked
+identical to a successful run. It now prints the path it tried, says plainly
+when the file is not there, and points at `--rename-tsv` when the path came
+from there.
+
+**And it warns about the symptom, not just the cause.** After the rename pass,
+any folder still carrying a raw ChatGPT id (`project_g-p-…`, `gpt_g-…`) is
+reported by name. Claude's grouped folders also begin with `project_` but carry
+a short UUID and a slug, so the `g-` discriminator separates "not yet named"
+from "named differently" without false positives — verified against both
+shapes.
+
+**A project-name map beside the wrapper now wins.** The wrapper's own header
+claimed configuration files live beside it; for the TSV that was false, since
+the code only looked next to `process_folder.py` and the wrapper never passed
+`--rename-tsv`. It now passes it when the file is really there, so a corpus can
+override and the account-level copy stays the default.
+
+**One selection list per source.** The wrapper called the sync twice with one
+shared list. The two exports name their folders differently — Claude's are
+`project_<short-uuid>__<slug>` from the manifest, ChatGPT's are whatever the
+TSV renamed them to — so every run reported each source's entries as missing
+from the other and exited 1. Now `SELLIST_CLAUDE` and `SELLIST_CHATGPT`, each
+skipped when empty or absent.
+
+**Two documentation faults found while doing this**, both stating the opposite
+of what the code does. `docs/pipeline-guide.md` never said the export archive
+is itself a corpus needing its own digest run before anything can select from
+it; it now carries the two-corpus flow as a diagram. And
+`claude_to_markdown.py`'s docstring said conversations are "flat under
+conversations/, not grouped by project", which stopped being true when manifest
+recovery was added.
+
+## The shared-file versioning rule
+
+**Closed at `project-manifest-format.md` 1.4**, after two round trips and one
+defect in between.
+
+**What was wrong.** The same glossary text was reaching the pipeline stamped
+1.6, 2.3, 4.4 and 4.6 — a shared file was carrying whichever version its host
+skill bundle happened to be at. A copy's version therefore said nothing about
+its content, which is the one thing a version is for in this arrangement: a
+file is the only channel between Designer and Developer, so a version mismatch
+has to mean drift rather than a variant.
+
+**What was built here.** `references/README.md` states the rule for this side —
+a shared file carries its own version, independent of any skill that bundles
+it, every copy shows the same version, and the version changes only when the
+content does.
+
+**What came back.** The Designer replaced the rule in
+`project-manifest-format.md` rather than patching it: the document version and
+`manifest_format_version` are stated as independent, either free to move
+without the other, with the general principle that a version describes the
+thing it is attached to and nothing else.
+
+**And then broke it, once.** 1.3 stated two different versions for itself — 1.3
+in the header, 1.2 in the *Versioning* section's own first line, in the section
+that had just been rewritten. Found by reading the shipped file, sent back
+rather than edited locally, and returned as 1.4 the same day. The fix removes
+the duplicate rather than syncing it: the section now says its own version is in
+the header. Verified on receipt that the diff is two hunks and nothing else in
+the file moved.
+
+**Worth keeping for the pattern**, not the content. The defect was a stale line
+left behind by an edit, in the paragraph most about not leaving stale versions
+behind; it survived the Designer's own review and was caught by a reader on the
+other side of the channel with no stake in the wording. That is the check this
+arrangement actually has, and it worked.
+
+## Inconsistencies between the shared reference files
+
+**All three resolved**, two by the Designer in the 2026-09-25 round and one
+before it. Recorded because each was found by reading the shipped files against
+each other, which is the only check this arrangement gets.
+
+**The sidecar description disagreed with the pipeline.** Resolved before the
+round: `corpus-glossary.md` v1.0 says the pipeline "copies through or sidecars
+whatever it cannot convert", and `repository-structure.md` says files it cannot
+convert "appear as a small Markdown sidecar recording the original's name, type
+and source path". Both now match what the code does.
+
+**The corpus was three places or four, depending which file you read.** The
+glossary said four — conversation, past conversations, Evernote notes, Drive
+repository — and declares itself the file that reconciles disagreements.
+`repository-structure.md` v2.1 said three, in two separate places, omitting
+Evernote. Resolved in 2.3: the preamble defers to the glossary rather than
+restating a corpus definition, and *Project and corpus* names all four. Nothing
+in the pipeline depended on the answer — it converts `1-Raw` into `2-Digested`
+and never sees a conversation or a live source — but the searcher does.
+
+**The multi-word keyword requirement vanished in the split.** Accepted and
+ruled in as pipeline work; now item 5 rather than a reference-file problem.
+
+**51% duplication in `repository-structure.md` v2.1.** Measured here,
+independently confirmed upstream, and cut in 2.3 — *The four tiers* and
+*Non-tier siblings*, both owned by the glossary, 121 lines down to 97. Checked
+before installing that the glossary really does carry what was cut, so the cut
+removed a duplicate rather than the only copy.
+
+## docx unresolved drawings — Decision 7
+
+**Resolved. No media was being lost; the figure was our own false positive.**
+
+The premise was that a 43,639-word docx reporting `unresolved_drawings: 433`
+with `images_extracted: 0` had lost 433 images. Verified against the real file
+(`Danger vs Agency.docx`) and it had not. The document contains no images at
+all:
+
+| Probe | Count |
+|---|---|
+| `word/media/` | folder absent |
+| `<w:drawing>` | 0 |
+| `r:embed=` / `r:link=` | 0 / 0 |
+| `<v:shape>` / `<v:imagedata>` | 0 / 0 |
+| `<w:object>` / `<mc:AlternateContent>` | 0 / 0 |
+| image relationships, `TargetMode="External"` | 0 / 0 |
+| **`<w:pict>`** | **433** |
+| **`<v:rect>`** | **433** |
+
+Pasting a web page into Word turns every HTML `<hr>` into
+`<w:pict><v:rect o:hr="t">`. The file is a pasted ChatGPT conversation, so the
+433 were turn separators. `render_pict` called every picture element without
+image data a failed image, and the counter was a substring search for
+`(unresolved)` over the finished Markdown.
+
+Both fixed. `render_pict` now distinguishes three cases — a resolvable image, an
+image that will not resolve, and a picture element that is not an image at all
+(a horizontal rule renders as `---`, other bare shapes render as nothing).
+The field is renamed `unresolved_images`, counts actual emissions, and is
+joined by `horizontal_rules`. Re-digestion replaces `unresolved_drawings` in
+existing output.
+
+Side effect worth knowing: those 433 dead markers were in the body, so keyword
+extraction had been counting *embedded* and *unresolved* 433 times in that file.
+Neither is a stopword. The same held for every pasted conversation, which is
+most of the high-count list.
+
+**Closed across the whole corpus.** Every affected document was swept, matching
+each digested file's marker count against its source's `word/media` entries,
+its `document.xml.rels` image relationships, and its recorded
+`images_extracted`.
+
+Of roughly 185 affected documents, only 20 carry any media at all, 50 files
+between them. In every one, `images_extracted` equals the number of image
+relationships in the document body: **the converter has never failed to extract
+an image the body references.** There is no extraction bug, and the highest
+marker counts (433, 197, 115, 99, 83) sit on documents with no media
+whatsoever.
+
+Eight image files across six documents exist in the package without being
+referenced from `document.xml`. Spot-checking the largest
+(`Core Mechanic and Probability System.docx`, 9 in the package, 8 referenced):
+the eight referenced are ~180 KB matplotlib charts, extracted and linked
+correctly, and the ninth is a **70-byte PNG** — a 1x1 pixel, the kind of
+spacer that arrives with pasted HTML. The file also carries `header1`/`header2`
+relationship parts, so header decoration is the other candidate for that class.
+
+No frontmatter counter was added for them. A field reporting eight
+pixel-spacers and header graphics as unreferenced would imply a loss that did
+not occur, which is worse than silence.
+
+## Pipeline self-check — Decision 5
+
+**Built** as `pipeline_selfcheck.py`. All six checks: unconverted files, index
+integrity, frontmatter presence, filename conformance, duplicate content by
+normalized token windows, and suggest-never-delete. `4-Canon` is exempt from
+the frontmatter check.
+
+The completeness check is well-defined because every file in `1-Raw` lands in
+exactly one of three states in `2-Digested`: converted, copied through, or
+represented by a sidecar carrying `source_path`.
+
+Duplicate detection fingerprints several windows through each document, not
+only the head — a pasted copy may begin at a different point than an export of
+the same conversation. Where candidates differ, the passages present in one and
+not the other are reported: **that is where hand-added commentary lives and it
+must not be lost to deduplication.**
+
+## The pipeline does not write `date`
+
+**Built.** Found by `pipeline_selfcheck.py` on its first run against clean
+output: every Markdown file the pipeline wrote was missing `date`, one of the
+four fields `repository-structure.md` says the pipeline writes and search
+relies on. `add_metadata` backfilled `modified` (mtime, UTC) and stamped
+`indexed_at`, but never `date`, which is meant to carry the document's own
+local timestamp with offset, matching its filename.
+
+Resolved from three sources in order, with the one used recorded in
+`date_source`:
+
+1. a date the converter already knows — a conversation's `create_time`, a
+   docx's document properties
+2. the timestamp in the filename, where the file follows the convention
+3. the file's mtime, converted to the corpus owner's local zone
+
+PDF dates are parsed with their timezone offset honoured rather than dropped,
+which would otherwise land a PDF written elsewhere hours out. A file that
+already carries `date` is left alone.
+
+## Parameterize the corpus wrappers — Decision 9
+
+**Built**, including 9.6. The Loom-specific batch files were replaced by
+generic ones taking the corpus root and remote as parameters:
+
+| Was | Became |
+|---|---|
+| `sync_loom.bat` | `sync_gdrive_corpus.bat` |
+| `push_loom.bat` | `push_gdrive_corpus.bat` |
+| `merge_loom_to_drive.bat` | `merge_corpus_local_to_drive.bat` |
+| `pull_matt.bat` | `pull_gdrive_folder.bat` |
+| `digest_all.bat` | `corpus_wrapper.template.bat` |
+
+`digest_all.bat` was not in the handoff's table but hardcoded all three library
+paths, and became the per-corpus marshaling wrapper. No corpus name, local path
+or Drive path appears in any generic script; rclone is found through
+`RCLONE_EXE`, the `PATH`, or a default, by one shared preamble rather than four
+copies of the same check.
+
+**9.6.** The stray `SKILL.md` is replaced by `project-manifest-format.md`, read
+from the `update-project-manifest` skill's own reference folder. The copy that
+arrived was stamped **v2.3** — the host skill bundle's version, not the shared
+file's, which is the per-bundle stamping bug that set off the versioning work.
+The same document is now at 1.3 in `references/`. No parser
+change was needed, verified rather than assumed: the manifest is consumed by
+`claude_to_markdown.py`, detected by content shape (`project_uuid` +
+`conversations`) rather than by filename, and every field is read with `.get()`.
+A manifest carrying `manifest_format_version`, every documented field, and
+invented keys besides is still recognised correctly. The manifest is recorded
+as a named pipeline input in the pipeline guide alongside `project_names.tsv`.
+
+That oddity is what became the versioning rule the Designer rewrote, first for
+1.3 and then for 1.4. It is closed; see *The shared-file versioning rule* below.
+
+## Keyword weighting simplified to one question
+
+**Decision 1, as amended by Nick.** The original built an eight-tier weighting
+from the acceptance rubric: tier 0 for the subject's own unquoted words, 5 and
+6 for terms the assistant introduced and the subject took up, 7 for terms that
+never left the assistant. It now asks one thing — does this term appear
+anywhere in the subject's turns — and answers 128 or 1.
+
+Two reasons, both Nick's.
+
+**Acceptance is not what keywords need.** Weighting by endorsement requires
+reading tone and hedging, and working out what a "yes, but" is conceding. That
+is the reporting skill's job. The pipeline should not approximate it.
+
+**Quoting demonstrates stake, not distance.** The old scheme put blockquoted
+text in a subject turn at weight 2, near the floor, reasoning that quoting an
+assertion does not transfer it. That is right for attribution and wrong for
+aboutness: choosing to reproduce a passage is engagement with its terminology,
+whoever wrote it first. If the subject later changes terminology, the newer
+usage outnumbers the old and comes to dominate on frequency alone.
+
+The simplification also removed the only unreliable input the weighting had.
+Blockquote markers depend on re-prefixing pasted text, which nobody does
+consistently, and a quotation of Matt, of a past self, or of another chat is
+indistinguishable from a quotation of this conversation's assistant. Measured
+on a real case, an unmarked external quote put someone else's vocabulary at
+full subject weight — 64x too high, in the worst direction. Under the current
+rule the question never arises: identical weights with or without markers,
+verified.
+
+What survives is structural rather than semantic. In a converted export
+`## Human` versus `## Assistant` is ground truth from the export data; in a
+speaker-labelled document the labels are explicit. Whose turn a term appears in
+is a fact about the file, not an interpretation of it.
+
+## HTML relative image sources
+
+**Closed.** `html_to_markdown.make_image_handler` now copies a relative `src=`
+into `<basename>_media/` and rewrites the link, alongside the base64 `data:`
+URLs it already handled. URL-escaped names resolve, a repeated asset copies
+once, and a path escaping the HTML file's own folder is refused rather than
+followed.
+
+PDF extraction was verified correct and needed no change: embedded images per
+page plus attachments, both written to `<basename>_media/` and linked.

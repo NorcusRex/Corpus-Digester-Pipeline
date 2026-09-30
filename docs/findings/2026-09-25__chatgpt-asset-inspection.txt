@@ -1,0 +1,92 @@
+Output of inspect_chatgpt_assets.py, run by Nick on 2026-09-25 against the
+2026-04-29-18-02-25 ChatGPT export. Kept as the evidence behind the ChatGPT
+media work. REDACTED at Nick's request, in case this repository is ever
+public: file ids and uploaded-document names are replaced by descriptions of
+their shape. Every structural fact the converter was built from -- the counts,
+the key names, the two pointer schemes and how they differ -- is preserved; this export is the last one, since ChatGPT is no longer in use, so
+this is the format the converter must handle permanently rather than a moving
+target.
+
+----------------------------------------------------------------------
+
+ChatGPT export asset inspection
+Folder: I:\AI\Backups\ChatGPT\Exported\1-Raw\2026-04-29-18-02-25
+
+Non-JSON files in the export folder: 1,424
+  .webp                832
+  .jpg                 188
+  .png                 144
+  .wav                 137
+  (no extension)       114
+  .jpeg                  6
+  .pdf                   2
+  .html                  1
+
+Example filenames (shape only, first 10):
+  <7hex>#file_<32hex>#p_4.jpg-p_4.jpg
+  <7hex>#file_<32hex>#p_10.jpg-p_10.jpg
+  <7hex>#file_<32hex>#p_22.jpg-p_22.jpg
+  <7hex>#file_<32hex>#p_24.jpg-p_24.jpg
+  <7hex>#file_<32hex>#p_18.jpg-p_18.jpg
+  chat.html
+  <7hex>#file_<32hex>#p_0.jpg-p_0.jpg
+  file-<id>-<original name>   (no extension)
+  file-<id>-<original name>.jpg
+  file-<id>-<original name>   (no extension)
+
+Filenames carrying a file-id: 1,417
+
+Conversations scanned: 775
+
+Content types found in message parts:
+  image_asset_pointer                              1,240
+  audio_transcription                                551
+  audio_asset_pointer                                276
+  real_time_user_audio_video_asset_pointer           275
+  metadata.attachments                               245
+
+Keys carried by each content type:
+  image_asset_pointer
+    asset_pointer, content_type, fovea, height, metadata, size_bytes, width
+  audio_transcription
+    content_type, decoding_id, direction, text
+  audio_asset_pointer
+    asset_pointer, content_type, expiry_datetime, format, metadata, size_bytes, tool_audio_direction
+  real_time_user_audio_video_asset_pointer
+    audio_asset_pointer, audio_start_timestamp, content_type, expiry_datetime, frames_asset_pointers, video_container_asset_pointer
+  metadata.attachments
+    _source, id, name, size, mime_type, source, height, width, file_token_size, mimeType, fileSizeTokens, is_big_paste, context_connector_info, library_file_id
+
+Example pointer values (identifiers, not prose):
+  image_asset_pointer
+    asset_pointer = file-service://file-<id>
+    asset_pointer = file-service://file-<id>
+    asset_pointer = file-service://file-<id>
+    asset_pointer = file-service://file-<id>
+    asset_pointer = file-service://file-<id>
+  metadata.attachments
+    id = file-<id>
+    name = <original filename>
+    file_token_size = 14778
+    id = file-<id>
+    name = <original filename>
+  audio_asset_pointer
+    asset_pointer = sediment://file_<hex id>
+    asset_pointer = sediment://file_<hex id>
+    asset_pointer = sediment://file_<hex id>
+    asset_pointer = sediment://file_<hex id>
+    asset_pointer = sediment://file_<hex id>
+
+Pointer-to-file matching, by embedded file-id:
+  pointers matching a file on disk : 1,368
+  pointers with no matching file   : 418
+  examples that did not match:
+    metadata.attachments.id = file-<id>
+    metadata.attachments.id = file-<id>
+    metadata.attachments.id = file-<id>
+    metadata.attachments.id = file-<id>
+    metadata.attachments.id = file-<id>
+
+A high match count means the converter can resolve pointers by the
+file-id embedded in the filename. A low one means the mapping works
+some other way, and these samples will show how.

@@ -1,2 +1,16 @@
 __pycache__/
 *.pyc
+
+# Run output: logs, generated directory listings, self-check reports.
+# These go stale the moment anything moves, so they are not tracked.
+*.log
+FILETREE.txt
+DIRTREE.txt
+tree.txt
+_selfcheck_*.md
+rejected*.md
+
+# Account data, not code: your ChatGPT project ids and the names you
+# gave them. Copy project_names.example.tsv to project_names.tsv and fill
+# in your own; the real file stays out of the repository.
+project_names.tsv

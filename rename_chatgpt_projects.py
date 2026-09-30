@@ -14,9 +14,9 @@ Workflow
 2. Create a plain text file (e.g. project_names.tsv) with one project per
    line, ID and name separated by a tab:
 
-       g-p-67f8deab3a0c819189bcc16e697ccd67    My Project Name
-       g-p-aabb1122334455667788aabbccddeeff    Cooking notes
-       g-p-deadbeefcafef00d12345678abcdef00    Tax planning 2026
+       g-p-00000000000000000000000000000001    My Project Name
+       g-p-00000000000000000000000000000002    Cooking notes
+       g-p-00000000000000000000000000000003    Tax planning 2026
 
    Use a real tab character between ID and name (not spaces). Most editors
    will let you type a tab; in some you may need to copy one from elsewhere.

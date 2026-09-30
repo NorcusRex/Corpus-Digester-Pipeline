@@ -1,0 +1,25 @@
+# Mapping of ChatGPT Project IDs to human-readable names.
+#
+# Copy this file to `project_names.tsv` and fill in your own projects. That
+# filename is git-ignored, because the mapping is account data -- your project
+# ids and the names you gave them -- rather than code.
+#
+# Two places the pipeline looks, in order:
+#   1. `--rename-tsv <path>`, which the per-corpus wrapper passes when a
+#      `project_names.tsv` sits beside it in `_Tools`.
+#   2. `project_names.tsv` next to `process_folder.py`.
+#
+# Without either, the rename step says so and the folders keep their raw ids.
+#
+# Format: <project_id><TAB><human_name>. A REAL tab, not spaces.
+# Lines starting with # are comments; blank lines are ignored.
+#
+# Find an id by opening the project in ChatGPT: the URL shows /g/g-p-XXXX/project.
+# Custom GPTs work the same way, with `gpt_g-` ids.
+#
+# If two projects share a name, the folder names collide -- disambiguate here
+# rather than after the fact.
+
+g-p-00000000000000000000000000000001	Example Project
+g-p-00000000000000000000000000000002	Another Project
+gpt_g-0000000000000000000000000000003	An Example Custom GPT
