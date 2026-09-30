@@ -244,10 +244,10 @@ Sidecar maintenance:
 
 ## PROJECT NAME MAP
 
-ChatGPT exports include project membership only as opaque IDs (e.g. g-p-67f8deab3a0c819189bcc16e697ccd67), not as the human- readable names you see in the ChatGPT UI. By default the pipeline creates folders like:
+ChatGPT exports include project membership only as opaque IDs (e.g. g-p-00000000000000000000000000000001), not as the human-readable names you see in the ChatGPT UI. By default the pipeline creates folders like:
 
 ```
-conversations/project_g-p-67f8deab3a0c819189bcc16e697ccd67/
+conversations/project_g-p-00000000000000000000000000000001/
 ```
 
 These are correct but unreadable. The project name map lets you turn them into:
@@ -258,13 +258,15 @@ conversations/My Project Name/
 
 Setup:
 
-- **1.** Create a file named project_names.tsv next to the orchestrator scripts (same folder as process_folder.py).
+- **1.** Copy `project_names.example.tsv` to `project_names.tsv`. It can sit next to `process_folder.py`, or beside a corpus wrapper in that corpus's `_Tools` folder — the wrapper passes `--rename-tsv` when it finds one there, and a per-corpus copy wins over the shared one.
+
+  The real file is git-ignored on purpose: the mapping is account data — your project ids and the names you gave them — not code. The example documents the format and ships in its place.
 
 - **2.** For each ChatGPT Project or Custom GPT you want renamed, add a line with the project ID, then a TAB character, then the human name you want:
 
-- **`g-p-67f8deab3a0c819189bcc16e697ccd67`** — My Project Name
-- **`g-p-67f8f4b93e648191bfa46a3845719182`** — Theory Project
-- **`g-p-686b8b9a278881918dce1b0212a53bd0`** — Philosophy
+- **`g-p-00000000000000000000000000000001`** — My Project Name
+- **`g-p-00000000000000000000000000000002`** — Theory Project
+- **`g-p-00000000000000000000000000000003`** — Philosophy
 
 The separator MUST be a real tab character, not spaces. Lines starting with # are comments. Blank lines are ignored.
 
