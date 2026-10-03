@@ -435,26 +435,41 @@ Conversation rendering:
 
 IMPORTANT LIMITATION: Claude's export does NOT preserve the conversation -> project mapping. Conversations are flat under conversations/, not grouped by project. The project/ folder contains the project metadata (name, description, prompt template, doc count) and the memories/ folder contains the per-project memory text, but you cannot determine from the export which conversations belonged to which project. This is a limitation of Claude's export format, not of this converter.
 
-WORKAROUND: PROJECT MANIFESTS You can recover project grouping by generating manifest files yourself. A manifest is a JSON file describing which conversations belong to a given project, in this format:
+WORKAROUND: PROJECT MANIFESTS You can recover project grouping by supplying manifest files. A manifest is a JSON file describing which conversations belong to a given project.
 
-```
+**Include `project_name`.** The name is resolved in two passes, in this order: the export's own project metadata file (`projects/<uuid>.json`, its `name` field) first, and the manifest's `project_name` as a fallback where no metadata file exists for that project or its name is empty — a case the converter handles deliberately, because some exports omit metadata for some projects. Where neither supplies a name, the folder becomes `project_<short-uuid>__untitled/`: correctly grouped, unreadably named.
+
+So the manifest is not the only source, but it is the only one you control, and it is the one that saves a project whose metadata the export happened to omit.
+
+Current format, `manifest_format_version` "1.0":
+
+```json
 {
-  "project_uuid": "<uuid>",
-  "conversation_count": <int>,
+  "manifest_format_version": "1.0",
+  "project_uuid": "0f9e2c31-9c7a-4a11-b6a1-7f2c1d5e8a90",
+  "project_name": "AI Methods",
+  "generated_at": "2026-09-17T09:42-07:00",
+  "conversation_count": 3,
   "conversations": [
-    {"uuid": "<conversation-uuid>", "title": "<title>"},
-    ...
+    {
+      "uuid": "3578b852-6bae-46e7-9268-393fbe0f2b55",
+      "title": "Reconstructing the digestion pipeline",
+      "updated_at": "2026-05-21T18:03:11Z"
+    }
   ]
 }
 ```
 
-To generate one, open Claude inside the project (incognito chat works fine) and run a prompt like:
+`conversations[]` is ordered oldest to newest by `updated_at`, so a manifest regenerated after new conversations appear differs from its predecessor only by appended entries. The full field contract is `references/project-manifest-format.md`.
 
-Generate a JSON manifest of every conversation in this project. Steps:
+To generate one, use the `update-project-manifest` skill from a Claude conversation:
 
-- **1.** Use the recent_chats tool to retrieve all conversations. Paginate with the `before` parameter (set to the earliest `updated_at` from the previous batch) until no more results. Use n=20 per call.
-- **2.** Extract each conversation's UUID and title.
-- **3.** Create a JSON file at /mnt/user-data/outputs/<PROJECT_UUID>_manifest.json (replacing <PROJECT_UUID> with the actual UUID below) using the structure above. Order oldest to newest. Escape quotes in titles. Then call present_files. Project UUID: <PASTE PROJECT UUID HERE>
+```
+update manifest for <PROJECT_UUID> <Project Name>
+/update-project-manifest <PROJECT_UUID> <Project Name>
+```
+
+Either form works, and with arguments missing the skill asks for them. It cannot see the project UUID or name itself, which is why both are supplied rather than inferred. The hand-written prompt this section used to carry is superseded. It predated the skill and omitted `project_name`, so a manifest made by following it had no name to fall back on — harmless where the export carried project metadata, and `__untitled` where it did not.
 
 Save the resulting JSON files into the export's projects/ folder (alongside the project metadata files) before running the pipeline. The converter detects them by content (top-level project_uuid + conversations keys), not filename.
 
@@ -472,6 +487,7 @@ The converter validates manifests at conversion time. After each run, the summar
 
 - manifests loaded
 - conversations grouped vs ungrouped
+- project-name fallbacks (projects whose name came from the manifest because the export carried no metadata file for them, or an empty name)
 - stale manifest entries (UUIDs not in the export -- usually from conversations deleted between manifest generation and export download)
 - title mismatches (conversation renamed in Claude after manifest was generated)
 - UUID conflicts (same conversation claimed by two project manifests -- a bug in the manifests, please regenerate)
