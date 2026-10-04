@@ -9,6 +9,7 @@ DIRTREE.txt
 tree.txt
 _selfcheck_*.md
 rejected*.md
+split/
 
 # Account data, not code: your ChatGPT project ids and the names you
 # gave them. Copy project_names.example.tsv to project_names.tsv and fill

@@ -49,7 +49,8 @@ Conversation rendering preserves all branches:
     section after the active body.
   - Thinking content blocks are rendered as collapsible details to keep the
     main flow readable.
-  - Tool use / tool result pairs are rendered as readable named blocks.
+  - Tool use / tool result pairs are rendered as readable named blocks;
+    multi-line inputs (the text of files Claude wrote) as their own fences.
   - Attachments are inlined when extracted_content is present in the export.
   - Files are listed by name (the export does not include file bytes).
 """
@@ -323,8 +324,36 @@ def render_thinking_block(block: dict) -> str:
     return "\n".join(parts)
 
 
+# Fence languages for a multi-line tool input, by the file it belongs to.
+_FENCE_LANG_BY_EXT = {
+    ".md": "markdown", ".py": "python", ".json": "json", ".js": "javascript",
+    ".ts": "typescript", ".html": "html", ".css": "css", ".sh": "bash",
+    ".yaml": "yaml", ".yml": "yaml", ".csv": "csv", ".sql": "sql",
+    ".bat": "bat", ".ps1": "powershell", ".xml": "xml", ".toml": "toml",
+}
+
+
+def fenced(text: str, lang: str = "") -> str:
+    """A fenced block that `text` cannot close early.
+
+    The fence is one backtick longer than the longest backtick run inside the
+    text, so a Markdown file that carries its own ``` blocks stays whole.
+    """
+    longest = max((len(m) for m in re.findall(r"`+", text)), default=0)
+    fence = "`" * max(3, longest + 1)
+    return f"{fence}{lang}\n{text.rstrip()}\n{fence}"
+
+
 def render_tool_use_block(block: dict) -> str:
-    """Render a tool_use block as a labeled, fenced section."""
+    """Render a tool_use block as a labeled, fenced section.
+
+    Scalar inputs stay as JSON. A multi-line string input -- the text of a
+    file Claude wrote (`create_file`'s `file_text`), both sides of an edit
+    (`str_replace`'s `old_str` and `new_str`), a shell script -- is lifted out
+    into its own fenced block. Left inside the JSON, a document becomes one
+    line of escaped `\\n`s, unreadable and poor for keyword extraction, and
+    this is where the export keeps the only copy of what Claude produced.
+    """
     name = block.get("name") or "tool"
     inp = block.get("input") or {}
     integration = block.get("integration_name")
@@ -332,11 +361,31 @@ def render_tool_use_block(block: dict) -> str:
     if integration:
         label_bits.append(f"_(via {integration})_")
     header = " ".join(label_bits)
+
+    lifted: dict[str, str] = {}
+    if isinstance(inp, dict):
+        lifted = {k: v for k, v in inp.items()
+                  if isinstance(v, str) and "\n" in v}
+        rest = {k: v for k, v in inp.items() if k not in lifted}
+    else:
+        rest = inp
     try:
-        body = json.dumps(inp, indent=2, ensure_ascii=False, default=str)
+        body = json.dumps(rest, indent=2, ensure_ascii=False, default=str)
     except (TypeError, ValueError):
-        body = str(inp)
-    return f"{header}\n\n```json\n{body}\n```"
+        body = str(rest)
+
+    parts = [header]
+    if rest or not lifted:
+        parts.append(f"```json\n{body}\n```")
+    path = inp.get("path") if isinstance(inp, dict) else None
+    ext = Path(path).suffix.lower() if isinstance(path, str) else ""
+    for key, text in lifted.items():
+        if key == "command":
+            lang = "bash"
+        else:
+            lang = _FENCE_LANG_BY_EXT.get(ext, "")
+        parts.append(f"`{key}`:\n\n{fenced(text, lang)}")
+    return "\n\n".join(parts)
 
 
 def render_tool_result_block(block: dict) -> str:
