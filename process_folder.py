@@ -882,6 +882,7 @@ def main() -> int:
             stats["claude_exports"] += 1
             stats["claude_conversations"] += est.get("conversations", 0)
             stats["claude_projects"] += est.get("projects", 0)
+            stats["claude_project_docs"] += est.get("project_docs", 0)
             stats["claude_memories"] += (
                 est.get("project_memories", 0)
                 + est.get("conversations_memory", 0)
@@ -893,7 +894,8 @@ def main() -> int:
             stats["claude_title_mismatches"] += est.get("manifest_title_mismatches", 0)
             stats["claude_uuid_conflicts"] += est.get("manifest_uuid_conflicts", 0)
             print(f"    converted: {est.get('conversations', 0)} conversations, "
-                  f"{est.get('projects', 0)} projects, "
+                  f"{est.get('projects', 0)} projects "
+                  f"({est.get('project_docs', 0)} knowledge docs), "
                   f"{est.get('project_memories', 0)} project memories")
             mans = est.get("manifests_loaded", 0)
             if mans:
@@ -931,6 +933,7 @@ def main() -> int:
         print(f"  claude exports     : {stats['claude_exports']} "
               f"({stats['claude_conversations']} conversations, "
               f"{stats['claude_projects']} projects, "
+              f"{stats['claude_project_docs']} knowledge docs, "
               f"{stats['claude_memories']} memories)")
     print(f"  markdown copied    : {stats['md']}")
     print(f"  txt wrapped        : {stats['txt']}")

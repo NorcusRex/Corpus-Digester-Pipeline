@@ -17,7 +17,9 @@ Output structure (mirroring the export under the OUTPUT_DIR):
     YYYY-MM-DD__title-slug.md      (one per conversation, flat)
 
   projects/
-    <short-uuid>__name-slug.md     (one per project, metadata only)
+    <short-uuid>__name-slug.md     (one per project, metadata)
+    <short-uuid>__name-slug_docs/  (project knowledge, one file per document,
+                                    full text)
 
   memories/
     conversations_memory.md        (cross-conversation memory)
@@ -631,12 +633,13 @@ def render_project_metadata(proj: dict) -> tuple[dict, str]:
         parts.append("```")
         parts.append("")
     if docs:
+        # Each document's text is written as its own file by
+        # render_project_doc(); this list is the table of contents.
         parts.append("## Project documents")
         parts.append("")
         for d in docs:
             if isinstance(d, dict):
-                name = d.get("file_name") or d.get("name") or "untitled"
-                parts.append(f"- {name}")
+                parts.append(f"- {project_doc_name(d)}")
             else:
                 parts.append(f"- {d}")
         parts.append("")
@@ -645,6 +648,38 @@ def render_project_metadata(proj: dict) -> tuple[dict, str]:
         parts.append("")
 
     body = "\n".join(parts).rstrip() + "\n"
+    return fm, body
+
+
+def project_doc_name(doc: dict) -> str:
+    """The document's filename. The export's key is `filename`; the other
+    two are kept in case an older or newer export spells it differently."""
+    return (doc.get("filename") or doc.get("file_name") or doc.get("name")
+            or "untitled")
+
+
+def render_project_doc(doc: dict, proj: dict) -> tuple[dict, str]:
+    """Render one project-knowledge document: its full text, verbatim.
+
+    The export carries the text of every file in a project's knowledge
+    (`docs[].content`), not just its name. The text goes into the body
+    unchanged -- most of these files are Markdown already, and they are
+    the user's own documents, so nothing is reformatted.
+    """
+    name = project_doc_name(doc)
+    fm = {
+        "title": name,
+        "source": "Claude export (project knowledge)",
+        "project_id": proj.get("uuid") or "",
+        "project_name": proj.get("name") or "",
+        "doc_id": doc.get("uuid") or "",
+        "created": iso_str(parse_iso(doc.get("created_at"))),
+    }
+    content = doc.get("content")
+    if isinstance(content, str) and content.strip():
+        body = content.rstrip() + "\n"
+    else:
+        body = "_(the export carries no text for this document)_\n"
     return fm, body
 
 
@@ -794,6 +829,7 @@ def convert_export(export_dir: Path, out_dir: Path) -> dict:
         "conversations_grouped": 0,
         "conversations_ungrouped": 0,
         "projects": 0,
+        "project_docs": 0,
         "manifests_loaded": 0,
         "manifest_stale_entries": 0,
         "manifest_title_mismatches": 0,
@@ -982,6 +1018,27 @@ def convert_export(export_dir: Path, out_dir: Path) -> dict:
         fname = f"{short_uuid(uid)}__{slug}.md"
         write_md(out_dir / "projects" / fname, fm, body)
         stats["projects"] += 1
+
+        # Project knowledge: one file per document, in a folder beside the
+        # project's metadata file.
+        docs_dir = out_dir / "projects" / f"{short_uuid(uid)}__{slug}_docs"
+        used: set[str] = set()
+        for doc in proj.get("docs") or []:
+            if not isinstance(doc, dict):
+                continue
+            try:
+                dfm, dbody = render_project_doc(doc, proj)
+            except Exception as e:  # noqa: BLE001
+                stats["errors"] += 1
+                print(f"  [warn] project doc failed ({jp.name}): {e}")
+                continue
+            stem = slugify(Path(project_doc_name(doc)).stem)
+            dname = f"{stem}.md"
+            if dname in used:
+                dname = f"{stem}__{short_uuid(doc.get('uuid') or '')}.md"
+            used.add(dname)
+            write_md(docs_dir / dname, dfm, dbody)
+            stats["project_docs"] += 1
 
     # ---- Memories --------------------------------------------------------
     mem_path = export_dir / "memories.json"
