@@ -243,6 +243,39 @@ spelling fix would have destroyed good output.
 Kept because the reasoning is worth finding again, not because anything is
 pending.
 
+## Project knowledge is in the export, and is now digested
+
+**The claim was that a member's export never includes the contents of files
+in a project's knowledge. For project knowledge, the real export says
+otherwise.** `projects/<uuid>.json` carries `docs[]`, and each entry holds
+`uuid`, `filename`, `created_at` and the document's full text in `content`.
+Checked against the 2026-05-09 export: `RPG - The Loom` carries all six of
+its `[SKILL]` files in full. `AI Theory` has `"docs": []`, which was the
+first file looked at, and would have suggested the opposite on its own.
+
+The converter was losing all of it, twice over. It listed documents by name
+only, and it read the name from `file_name` or `name`, while the export spells
+it `filename`, so every document would have been listed as `untitled`.
+
+Each document is now written verbatim to
+`projects/<short-uuid>__<slug>_docs/<doc-slug>.md`, with frontmatter naming
+the project and document, and goes through metadata, sidecars and the index
+like any other digested file. Verified on the Loom project file: the six
+bodies match the export's `content` byte for byte.
+
+**What the export still does not carry: files.** The Claude export in the
+file tree is JSON only. No uploaded file and no generated output (an
+`.xlsx`, a `.png`) appears as a file, unlike the ChatGPT export, which ships
+uploads, DALL-E generations and code-interpreter output under `mnt/data`.
+Whether an output's *text* survives in `conversations.json`, as the input
+to the tool call that wrote it, is still to be checked on a real
+conversation.
+
+**Existing output predates this.** The digested Claude export in `I:` was
+made by the old copy of the pipeline in `_Tools\Digestion Pipeline`, so
+it has none of this, and none of the other work merged since. It needs a
+re-digest with the current code.
+
 ## Authored tiers are stamped and catalogued
 
 **Closed.** Nick's ruling: the pipeline should add metadata to `3-Reporting`

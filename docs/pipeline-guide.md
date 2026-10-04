@@ -401,7 +401,8 @@ conversations/
 
 projects/
 
-- **`<short-uuid>__name-slug.md`** — (one per project; metadata only)
+- **`<short-uuid>__name-slug.md`** — (one per project; metadata, with the knowledge documents listed by name)
+- **`<short-uuid>__name-slug_docs/`** — (the project's knowledge: one file per document, its full text verbatim. The export carries the text of project-knowledge files in `projects/<uuid>.json` under `docs[].content`; files attached to a conversation are a different matter, below)
 
 memories/
 
