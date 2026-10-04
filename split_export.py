@@ -66,13 +66,15 @@ USAGE
     python split_export.py EXPORT_DIR OUT_DIR
     python split_export.py EXPORT_DIR OUT_DIR --dry-run
     python split_export.py EXPORT_DIR OUT_DIR --only <project-uuid>
+    python split_export.py EXPORT_DIR OUT_DIR --only "<project name>"
 
 EXIT CODES
 
     0  split completed
     1  completed, but something needs attention (an empty split, a manifest
        naming conversations the export does not contain)
-    2  a usage or path error, or a source with no writer yet
+    2  a usage or path error, or a source with no writer yet, or an
+       --only that names no project (or, by name, more than one)
 """
 
 from __future__ import annotations
@@ -192,6 +194,39 @@ def claude_folder_name(pid: str, name: str) -> str:
     return f"project_{c2m.short_uuid(pid)}__{c2m.slugify(name or 'untitled')}"
 
 
+def resolve_claude_only(only: str, project_name: dict,
+                        known: set) -> str | None:
+    """The project uuid `--only` means, or None after explaining why not.
+
+    A uuid is taken as given. Otherwise `only` is matched against project
+    names, exactly but ignoring case, and must match exactly one: names are
+    not unique (two projects can both be "Politics"), and picking one of
+    two would split the wrong project without a word.
+
+    An --only that matched nothing used to write no splits and still exit 0,
+    which reads as success. Found when a project name was passed where a
+    uuid was expected.
+    """
+    if only in known:
+        return only
+    wanted = only.strip().casefold()
+    hits = sorted(pid for pid in known
+                  if (project_name.get(pid) or "").strip().casefold() == wanted)
+    if len(hits) == 1:
+        return hits[0]
+    if hits:
+        print(f"ERROR: --only {only!r} names {len(hits)} projects. "
+              f"Pass the uuid of the one you mean:", file=sys.stderr)
+        listed = hits
+    else:
+        print(f"ERROR: --only {only!r} matches no project uuid or name. "
+              f"Projects in this export:", file=sys.stderr)
+        listed = sorted(known, key=lambda p: (project_name.get(p) or "").casefold())
+    for pid in listed:
+        print(f"  {pid}  {project_name.get(pid) or '(unnamed)'}", file=sys.stderr)
+    return None
+
+
 def split_claude(export_dir: Path, out_dir: Path, dry_run: bool,
                  only: str | None) -> int:
     conv_to_project, project_name, metadata_files, manifest_uuids = \
@@ -212,6 +247,12 @@ def split_claude(export_dir: Path, out_dir: Path, dry_run: bool,
             continue
         pid = conv_to_project.get(conv.get("uuid") or "")
         buckets[pid or UNGROUPED_DIR].append(conv)
+
+    if only:
+        known = set(project_name) | set(manifest_uuids) | set(metadata_files)
+        only = resolve_claude_only(only, project_name, known)
+        if only is None:
+            return 2
 
     users = read_json(export_dir / "users.json")
     memories = read_json(export_dir / "memories.json")
@@ -282,6 +323,12 @@ def split_claude(export_dir: Path, out_dir: Path, dry_run: bool,
 
         print(f"  {folder}/  {len(convs):,} conversation(s){note}")
         written += 1
+
+    if only and not written:
+        # A real project with none of its conversations in this export.
+        findings += 1
+        print(f"  {claude_folder_name(only, project_name.get(only, ''))}/  "
+              f"not written  [!] none of its conversations are in the export")
 
     print()
     print(f"{written} split(s) {'previewed' if dry_run else 'written'} "
@@ -363,6 +410,13 @@ def split_chatgpt(export_dir: Path, out_dir: Path, dry_run: bool,
     aux = [f for f in sorted(export_dir.iterdir())
            if f.is_file() and f.name.lower() in CHATGPT_AUX]
 
+    if only and only not in buckets:
+        print(f"ERROR: --only {only!r} matches no project folder. "
+              f"Folders in this export:", file=sys.stderr)
+        for key in sorted(buckets):
+            print(f"  {key}", file=sys.stderr)
+        return 2
+
     findings = 0
     written = 0
     for key, convs in sorted(buckets.items(),
@@ -433,9 +487,10 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true",
                     help="Show what would be written, change nothing")
     ap.add_argument("--only", default=None, metavar="PROJECT",
-                    help="Split out one project and nothing else. A project "
-                         "uuid for Claude; the folder name "
-                         "(project_g-p-...) for ChatGPT.")
+                    help="Split out one project and nothing else. For Claude, "
+                         "a project uuid or its exact name; for ChatGPT, the "
+                         "folder name (project_g-p-...). Matching nothing is "
+                         "an error that lists what is there.")
     args = ap.parse_args()
 
     export_dir = Path(args.export_dir).expanduser()

@@ -890,7 +890,10 @@ The two-corpus flow above converts every conversation twice: once in the archive
 python split_export.py EXPORT_DIR OUT_DIR
 python split_export.py EXPORT_DIR OUT_DIR --dry-run
 python split_export.py EXPORT_DIR OUT_DIR --only <project-uuid>
+python split_export.py EXPORT_DIR OUT_DIR --only "<project name>"
 ```
+
+**`--only` must match.** A Claude project is named by its uuid or by its exact name, case aside; a ChatGPT one by its folder name. A name two projects share is refused, since either choice could be the wrong one. Anything that matches nothing stops with an error listing what the export does contain -- it used to write nothing and report success.
 
 Grouping never needed a converter. Which conversation belongs to which project is a plain read of the manifests in `projects/`; the splitter filters `conversations.json` by that map and writes one export per project. Each output folder is a valid export in its own right -- `conversations.json`, `users.json`, `projects/` -- so the pipeline digests it exactly as it would the original, and because the manifest travels with it, the receiving corpus recreates the same project folder name.
 
