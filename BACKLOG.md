@@ -282,6 +282,17 @@ The converter kept all of this but rendered it as one escaped JSON line.
 Multi-line inputs are now lifted into their own fenced blocks; verified on
 the same split, all 66 come back out byte for byte.
 
+**And the files themselves are now rebuilt.** `claude_outputs.py` replays
+each conversation's file operations and writes the results, byte-identical,
+into `<conversation>_outputs/`. On the Loom split: 16 files across 4
+conversations, 10 of them presented; all 12 real edits applied (the two
+`str_replace` calls with no path had failed, and are skipped); the one loss
+is `loom-writing-suite.zip`, whose six files are recovered individually.
+Matched byte for byte against an independent replay, and unchanged after
+two full pipeline runs. Recovering them also exposed that the stale check
+read project-knowledge documents as orphans, which `--delete-orphans` would
+have deleted; they are now skipped like project metadata.
+
 **Existing output predates this.** The digested Claude export in `I:` was
 made by the old copy of the pipeline in `_Tools\Digestion Pipeline`, so
 it has none of this, and none of the other work merged since. It needs a

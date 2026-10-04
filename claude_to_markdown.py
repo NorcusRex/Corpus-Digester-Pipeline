@@ -64,6 +64,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import claude_outputs
+
 
 # ---------------------------------------------------------------------------
 # Detection
@@ -879,6 +881,10 @@ def convert_export(export_dir: Path, out_dir: Path) -> dict:
         "conversations_ungrouped": 0,
         "projects": 0,
         "project_docs": 0,
+        "outputs_recovered": 0,
+        "outputs_presented": 0,
+        "outputs_unrecoverable": 0,
+        "outputs_edits_not_applied": 0,
         "manifests_loaded": 0,
         "manifest_stale_entries": 0,
         "manifest_title_mismatches": 0,
@@ -1037,6 +1043,30 @@ def convert_export(export_dir: Path, out_dir: Path) -> dict:
                     suffix = short_uuid(cuid)
                     fname = f"{base}__{suffix}.md"
                 seen.add(fname)
+
+                # Outputs: the files Claude wrote, rebuilt from its tool
+                # calls and written beside the conversation. See
+                # claude_outputs.py for what is and is not recoverable.
+                try:
+                    active, inactive = find_active_branch(
+                        conv.get("chat_messages") or [])
+                    rec = claude_outputs.recover(conv, active, inactive)
+                    out_folder = Path(fname).stem + claude_outputs.OUTPUTS_DIR_SUFFIX
+                    manifest = claude_outputs.write_outputs(
+                        rec, target_dir / out_folder, conv)
+                    extra = claude_outputs.section(manifest, out_folder)
+                    if extra:
+                        body = body.rstrip() + "\n\n" + extra
+                    stats["outputs_recovered"] += len(manifest["files"])
+                    stats["outputs_presented"] += sum(
+                        1 for e in manifest["files"] if e["presented"])
+                    stats["outputs_unrecoverable"] += len(manifest["unrecoverable"])
+                    stats["outputs_edits_not_applied"] += sum(
+                        e.get("edits_not_applied", 0) for e in manifest["files"])
+                except Exception as e:  # noqa: BLE001
+                    stats["errors"] += 1
+                    print(f"  [warn] output recovery failed ({cuid}): {e}")
+
                 write_md(target_dir / fname, fm, body)
                 stats["conversations"] += 1
 

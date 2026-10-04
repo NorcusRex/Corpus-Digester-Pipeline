@@ -163,9 +163,12 @@ class DigestedIndex:
         self.root = digested_root
         self.corpus_root = corpus_root
         self.files: list[Path] = walk_content(digested_root)
+        # Recovered outputs are kept byte-identical and carry no frontmatter
+        # by design; they are not digested Markdown and are not checked as it.
         self.md_files: list[Path] = [
             f for f in self.files
             if f.suffix.lower() == ".md" and not f.name.endswith(".nlm.md")
+            and not add_metadata.in_recovered_outputs(f, digested_root)
         ]
         self.rel_paths: set[str] = {
             f.relative_to(digested_root).as_posix() for f in self.files
@@ -310,6 +313,8 @@ def check_frontmatter(tiers: dict[str, Path]) -> dict[str, list[tuple[str, list[
         rows: list[tuple[str, list[str]]] = []
         for md in walk_content(root):
             if md.suffix.lower() != ".md" or md.name.endswith(".nlm.md"):
+                continue
+            if add_metadata.in_recovered_outputs(md, root):
                 continue
             try:
                 text = md.read_text(encoding="utf-8", errors="replace")

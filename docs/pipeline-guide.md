@@ -60,6 +60,9 @@ claude_to_markdown.py     Claude data export -> N .md files
                           conversations with branches, thinking blocks,
                           tool use, attachments. Per-project memories
                           and metadata get sidecar .md files.
+claude_outputs.py         Used by claude_to_markdown.py: rebuilds the
+                          files Claude wrote in each conversation from
+                          its tool calls (see RECOVERED OUTPUTS).
 add_metadata.py           Adds keywords (TF-IDF when corpus has 5+
                           files), outline, indexed_at to every .md
                           file's frontmatter and body
@@ -398,6 +401,7 @@ Output structure mirrors the source path. Inside the converted export folder you
 conversations/
 
 - **`YYYY-MM-DD__title-slug.md`** — (one per conversation, flat)
+- **`YYYY-MM-DD__title-slug_outputs/`** — (the files Claude wrote in that conversation, rebuilt; only where it wrote any. See RECOVERED OUTPUTS below)
 
 projects/
 
@@ -419,6 +423,20 @@ Conversation rendering:
 - Tool use and tool result blocks rendered as labeled named sections with the tool's input as JSON and the result text inline. A multi-line input is lifted out of the JSON into its own fenced block: the text of a file Claude wrote (`create_file`'s `file_text`), both sides of an edit (`str_replace`'s `old_str` and `new_str`), a shell script. This is the only place the export keeps what Claude produced, so it is rendered as readable text rather than one escaped line. The fence is always longer than any backtick run inside, so a document carrying its own code blocks stays whole.
 - Attachments: the export embeds the extracted text content of file uploads. This is rendered inline in a fenced code block with the file name, type, and size as a label.
 - Files: the export records file names and UUIDs but does NOT include file bytes. Each is listed by name with a note that the bytes are not in the export.
+- Recovered outputs: a conversation in which Claude wrote files ends with a "Recovered outputs" section linking to them. See RECOVERED OUTPUTS below.
+
+**RECOVERED OUTPUTS**
+
+A Claude export carries no output files, only the tool calls that made them. `claude_outputs.py` replays those calls in order and writes each file as it stood when the conversation ended into `<conversation>_outputs/`, beside the conversation.
+
+- **What is replayed:** `create_file` (the full text), `str_replace` (each edit, applied only where its old text occurs exactly once), plain `cp` and `mv` in shell commands (including `cd`, wildcards and directory copies), and `present_files` (which files were shown in the side panel). A tool call whose result was an error is skipped: it changed nothing.
+- **Names:** a presented file keeps the name it was presented with. Every other file Claude wrote is kept too, as a "working file", with its folders below `/home/claude` or `/mnt/user-data/outputs` preserved; a working copy identical to a presented file is not written twice. Characters Windows refuses in a name become `_`.
+- **Not recoverable:** binary outputs (a `.zip`, a `.docx` built by a script). They are listed, not dropped. For a zip, the files it was built from are named, since those usually are recovered.
+- **Flagged, never guessed:** an edit that cannot be applied (its old text found zero times or more than once) is counted against the file, and the file is written as far as it got. A file that exists only on an abandoned branch is recovered and marked as such.
+- **Not yet replayed:** the older `artifacts` tool. No example of its input has been seen, so its calls are counted in the manifest rather than interpreted.
+
+`_recovered-outputs.json` in each folder records, per file, where it was written, where it ended up, whether it was presented, and how many edits applied. It also marks the folder: metadata, NotebookLM sidecars, the index, `clean_stale.py` and the self-check all leave a folder carrying it alone, so recovered files stay byte-identical -- the same catalogue-not-stamp treatment 4-Canon gets. Search reaches their text through the conversation, which carries it in full.
+
 - Frontmatter fields specific to Claude conversations:
 
 - **`conversation_id`** — uuid from the export

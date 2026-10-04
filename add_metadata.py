@@ -603,6 +603,32 @@ def is_utility_path(path, root) -> bool:
     return any(p.startswith(".") or p in EXCLUDED_DIR_NAMES for p in parts)
 
 
+# Recovered outputs: files Claude wrote, rebuilt by claude_outputs.py and kept
+# byte-identical. A folder holding this manifest is never stamped, sidecarred,
+# indexed, stale-checked or self-checked -- the catalogue-not-stamp rule that
+# 4-Canon follows. Detected by the manifest, not by folder name, so a raw
+# folder that happens to end in `_outputs` is digested normally. The name is
+# repeated here rather than imported to keep this module free of the
+# converters; claude_outputs.MANIFEST_NAME is the same string.
+RECOVERED_OUTPUTS_MANIFEST = "_recovered-outputs.json"
+
+
+def in_recovered_outputs(path, root) -> bool:
+    """True for a file inside a recovered-outputs folder under `root`."""
+    from pathlib import Path as _P
+    path, root = _P(path), _P(root)
+    try:
+        rel = path.relative_to(root).parts[:-1]
+    except ValueError:
+        return False
+    d = root
+    for part in rel:
+        d = d / part
+        if (d / RECOVERED_OUTPUTS_MANIFEST).is_file():
+            return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Extraction artifacts  (digester handoff v6.8, Decision 8)
 # ---------------------------------------------------------------------------
@@ -1397,7 +1423,8 @@ def main() -> int:
         files = [root] if root.suffix.lower() == ".md" else []
     else:
         pattern = "**/*.md" if args.recursive else "*.md"
-        files = sorted(root.glob(pattern))
+        files = [f for f in sorted(root.glob(pattern))
+                 if not in_recovered_outputs(f, root)]
 
     if not files:
         print(f"No markdown files found under {root}")

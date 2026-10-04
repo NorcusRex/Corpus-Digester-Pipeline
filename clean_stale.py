@@ -65,10 +65,14 @@ Files always skipped (never analyzed, never deleted):
 
 - `.nlm.md` sidecars (handled implicitly when their .md is deleted)
 - Files with `source: "Claude export (project metadata)"`,
-  `"Claude export (memory)"`, `"Claude export (project memory)"`,
-  `"Claude export (account)"`, or `"ChatGPT export auxiliary file"`.
-  These have legitimate non-conversation sources that aren't worth
-  cross-checking automatically.
+  `"Claude export (project knowledge)"`, `"Claude export (memory)"`,
+  `"Claude export (project memory)"`, `"Claude export (account)"`, or
+  `"ChatGPT export auxiliary file"`. These have legitimate non-conversation
+  sources that aren't worth cross-checking automatically.
+- Outputs recovered from a Claude export, in a folder carrying
+  `_recovered-outputs.json`. They are rebuilt from the export's
+  conversations, have no file of their own in the raw tree, and are kept
+  byte-identical, so they carry no frontmatter to check.
 
 Usage:
     python clean_stale.py <raw_dir> <digested_dir>
@@ -111,6 +115,9 @@ FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n?", re.DOTALL)
 # objects (project memory, user account, etc.). Leave them alone.
 SKIP_SOURCES = {
     "Claude export (project metadata)",
+    # Project-knowledge documents carry no source_file or conversation_id,
+    # so without this they read as orphans and --delete-orphans removes them.
+    "Claude export (project knowledge)",
     "Claude export (memory)",
     "Claude export (project memory)",
     "Claude export (account)",
@@ -342,10 +349,36 @@ def classify_file(md_path: Path,
             f"no source_file or conversation_id; source={source or '(unset)'}")
 
 
+RECOVERED_OUTPUTS_MANIFEST = "_recovered-outputs.json"
+
+
+def in_recovered_outputs(path: Path, root: Path) -> bool:
+    """True inside a folder of outputs recovered from a Claude export.
+
+    Those files have no source of their own in 1-Raw -- they come from the
+    export's conversations.json -- so every one would be reported as an
+    orphan, and --force would delete the only rebuilt copy. Kept local, like
+    parse_frontmatter, so this script runs on its own; the same check lives
+    in add_metadata.in_recovered_outputs.
+    """
+    try:
+        rel = path.relative_to(root).parts[:-1]
+    except ValueError:
+        return False
+    d = root
+    for part in rel:
+        d = d / part
+        if (d / RECOVERED_OUTPUTS_MANIFEST).is_file():
+            return True
+    return False
+
+
 def find_md_files(digested_dir: Path) -> list[Path]:
-    """Return canonical .md files under digested_dir, excluding .nlm.md sidecars."""
+    """Return canonical .md files under digested_dir, excluding .nlm.md
+    sidecars and recovered outputs."""
     return [p for p in digested_dir.rglob("*.md")
-            if p.is_file() and not p.name.endswith(".nlm.md")]
+            if p.is_file() and not p.name.endswith(".nlm.md")
+            and not in_recovered_outputs(p, digested_dir)]
 
 
 def paired_sidecar(md_path: Path) -> Path:

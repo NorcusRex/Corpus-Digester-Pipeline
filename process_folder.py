@@ -883,6 +883,10 @@ def main() -> int:
             stats["claude_conversations"] += est.get("conversations", 0)
             stats["claude_projects"] += est.get("projects", 0)
             stats["claude_project_docs"] += est.get("project_docs", 0)
+            stats["claude_outputs"] += est.get("outputs_recovered", 0)
+            stats["claude_outputs_lost"] += est.get("outputs_unrecoverable", 0)
+            stats["claude_outputs_edits_failed"] += est.get(
+                "outputs_edits_not_applied", 0)
             stats["claude_memories"] += (
                 est.get("project_memories", 0)
                 + est.get("conversations_memory", 0)
@@ -935,6 +939,12 @@ def main() -> int:
               f"{stats['claude_projects']} projects, "
               f"{stats['claude_project_docs']} knowledge docs, "
               f"{stats['claude_memories']} memories)")
+        if stats['claude_outputs'] or stats['claude_outputs_lost']:
+            print(f"  claude outputs     : {stats['claude_outputs']} recovered, "
+                  f"{stats['claude_outputs_lost']} not recoverable"
+                  + (f", {stats['claude_outputs_edits_failed']} edit(s) "
+                     f"not applied" if stats['claude_outputs_edits_failed']
+                     else ""))
     print(f"  markdown copied    : {stats['md']}")
     print(f"  txt wrapped        : {stats['txt']}")
     print(f"  media preserved    : {stats['media']}")
@@ -1004,7 +1014,8 @@ def main() -> int:
         print()
         print("Indexing generated Markdown...")
         md_files = [f for f in sorted(out_root.rglob("*.md"))
-                    if not f.name.endswith(".nlm.md")]
+                    if not f.name.endswith(".nlm.md")
+                    and not add_metadata.in_recovered_outputs(f, out_root)]
         # Build corpus document-frequency stats so keyword extraction uses
         # TF-IDF (distinctive terms) rather than raw frequency (generic
         # high-count words like "edge", "roll").
@@ -1061,7 +1072,8 @@ def main() -> int:
         # Re-glob to pick up files written this run; exclude existing
         # .nlm.md so we don't generate sidecars-of-sidecars.
         primary = [f for f in sorted(out_root.rglob("*.md"))
-                   if not f.name.endswith(".nlm.md")]
+                   if not f.name.endswith(".nlm.md")
+                   and not add_metadata.in_recovered_outputs(f, out_root)]
         nlm_written = 0
         for f in primary:
             try:
@@ -1097,7 +1109,8 @@ def main() -> int:
     if not args.dry_run and not args.no_index:
         try:
             md_files = [f for f in sorted(out_root.rglob("*.md"))
-                        if not f.name.endswith(".nlm.md")]
+                        if not f.name.endswith(".nlm.md")
+                        and not add_metadata.in_recovered_outputs(f, out_root)]
             index_entries = []
             for f in md_files:
                 if f.name.startswith("_pipeline_") and f.suffix == ".log":
