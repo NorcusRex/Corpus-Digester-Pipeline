@@ -267,9 +267,20 @@ bodies match the export's `content` byte for byte.
 file tree is JSON only. No uploaded file and no generated output (an
 `.xlsx`, a `.png`) appears as a file, unlike the ChatGPT export, which ships
 uploads, DALL-E generations and code-interpreter output under `mnt/data`.
-Whether an output's *text* survives in `conversations.json`, as the input
-to the tool call that wrote it, is still to be checked on a real
-conversation.
+**An output's text does survive, inside the tool call that wrote it.**
+Checked on the Loom split (26 conversations): every file Claude presented
+was written by `create_file`, whose `file_text` holds it in full -- including
+ones drafted in `/home/claude` and copied to `outputs/` with `cp`. Later
+edits are `str_replace` old/new pairs, so a final version means replaying
+them; the export never holds the finished file whole. A binary output (a
+`.zip`) survives only as the command that built it, though here its
+contents were each written by `create_file` too. Uploaded files are names
+only, but their text survives where Claude extracted it with `pandoc` or
+`extract-text`, in that tool's result.
+
+The converter kept all of this but rendered it as one escaped JSON line.
+Multi-line inputs are now lifted into their own fenced blocks; verified on
+the same split, all 66 come back out byte for byte.
 
 **Existing output predates this.** The digested Claude export in `I:` was
 made by the old copy of the pipeline in `_Tools\Digestion Pipeline`, so

@@ -416,7 +416,7 @@ Conversation rendering:
 - Active branch (root -> latest message at every fork) renders first, with branch points resolved by recency.
 - Inactive branches (regenerations, abandoned forks) preserved in a labeled "Inactive branches" section at the bottom.
 - Thinking blocks rendered as collapsible <details> / <summary> so the main flow stays readable. Both the summary lines and full thinking text are preserved.
-- Tool use and tool result blocks rendered as labeled named sections with the tool's input as JSON and the result text inline.
+- Tool use and tool result blocks rendered as labeled named sections with the tool's input as JSON and the result text inline. A multi-line input is lifted out of the JSON into its own fenced block: the text of a file Claude wrote (`create_file`'s `file_text`), both sides of an edit (`str_replace`'s `old_str` and `new_str`), a shell script. This is the only place the export keeps what Claude produced, so it is rendered as readable text rather than one escaped line. The fence is always longer than any backtick run inside, so a document carrying its own code blocks stays whole.
 - Attachments: the export embeds the extracted text content of file uploads. This is rendered inline in a fenced code block with the file name, type, and size as a label.
 - Files: the export records file names and UUIDs but does NOT include file bytes. Each is listed by name with a note that the bytes are not in the export.
 - Frontmatter fields specific to Claude conversations:
