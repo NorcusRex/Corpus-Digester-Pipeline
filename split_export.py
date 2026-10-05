@@ -90,6 +90,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 import chatgpt_assets  # noqa: E402
+import claude_manifests  # noqa: E402
 import chatgpt_to_markdown as g2m  # noqa: E402
 import claude_to_markdown as c2m  # noqa: E402
 
@@ -228,15 +229,25 @@ def resolve_claude_only(only: str, project_name: dict,
 
 
 def split_claude(export_dir: Path, out_dir: Path, dry_run: bool,
-                 only: str | None) -> int:
-    conv_to_project, project_name, metadata_files, manifest_uuids = \
-        claude_grouping(export_dir)
+                 only: str | None, lenient: bool = False) -> int:
+    _, _, metadata_files, manifest_uuids = claude_grouping(export_dir)
 
     conversations = read_json(export_dir / "conversations.json")
     if not isinstance(conversations, list):
         print("ERROR: conversations.json is missing or is not a list.",
               file=sys.stderr)
         return 2
+
+    # The same manifests and the same gate as the digest, so a split never
+    # groups differently from the run that will digest it -- and a bad
+    # manifest stops here, before any split is written.
+    res = claude_manifests.resolve(export_dir, conversations)
+    try:
+        claude_manifests.gate(res, export_dir, lenient)
+    except claude_manifests.ManifestGateError as e:
+        print(claude_manifests.banner(export_dir, e.problems), file=sys.stderr)
+        return 2
+    conv_to_project, project_name = res.conv_to_project, res.project_names
 
     present = {c.get("uuid") for c in conversations
                if isinstance(c, dict) and c.get("uuid")}
@@ -486,6 +497,10 @@ def main() -> int:
     ap.add_argument("out_dir", help="Where the per-project exports are written")
     ap.add_argument("--dry-run", action="store_true",
                     help="Show what would be written, change nothing")
+    ap.add_argument("--lenient-manifests", action="store_true",
+                    help="Claude: report manifest problems instead of "
+                         "stopping. For exports made before manifests were "
+                         "checked.")
     ap.add_argument("--only", default=None, metavar="PROJECT",
                     help="Split out one project and nothing else. For Claude, "
                          "a project uuid or its exact name; for ChatGPT, the "
@@ -504,7 +519,8 @@ def main() -> int:
 
     if c2m.is_claude_export(export_dir):
         print(f"Claude export: {export_dir}")
-        return split_claude(export_dir, out_dir, args.dry_run, args.only)
+        return split_claude(export_dir, out_dir, args.dry_run, args.only,
+                            args.lenient_manifests)
 
     if (export_dir / "conversations.json").is_file():
         print(f"ChatGPT export: {export_dir}")

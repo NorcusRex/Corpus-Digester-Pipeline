@@ -57,6 +57,7 @@ import chatgpt_assets          # noqa: E402
 import ocr_pdf                 # noqa: E402
 import run_log                 # noqa: E402
 import claude_to_markdown      # noqa: E402
+import claude_manifests        # noqa: E402
 import rtf_to_markdown         # noqa: E402
 import html_to_markdown        # noqa: E402
 import add_metadata            # noqa: E402
@@ -693,6 +694,11 @@ def main() -> int:
                     help="Skip writing a log file")
     ap.add_argument("--log-dir", default=None,
                     help="Directory to write the log file (default: OUTPUT_DIR)")
+    ap.add_argument("--lenient-manifests", action="store_true",
+                    help="Report Claude project-manifest problems instead of "
+                         "stopping. Only for exports made before manifests "
+                         "were written by the update-project-manifest skill "
+                         "into outputs; see docs/runbook.md.")
     ap.add_argument("--clean", action="store_true",
                     help="Delete the contents of OUTPUT_DIR before running. "
                          "Use when you want a guaranteed-fresh build.")
@@ -780,6 +786,25 @@ def main() -> int:
         print("ERROR: output directory cannot be inside the input directory.",
               file=sys.stderr)
         return 1
+
+    # ---- Manifest gate -------------------------------------------------
+    # Before anything is written, --clean included: every Claude export's
+    # project manifests are found and checked. If any are wrong the run stops
+    # here with the corpus untouched. See claude_manifests.py.
+    claude_resolutions: dict[Path, claude_manifests.Resolution] = {}
+    gate_failures: list[tuple[Path, list[str]]] = []
+    for export_root in sorted(find_claude_export_roots(src_root)):
+        res = claude_manifests.resolve(export_root)
+        claude_resolutions[export_root] = res
+        try:
+            claude_manifests.gate(res, export_root, args.lenient_manifests)
+        except claude_manifests.ManifestGateError as e:
+            gate_failures.append((export_root, e.problems))
+    if gate_failures:
+        for export_root, problems in gate_failures:
+            print(claude_manifests.banner(export_root, problems),
+                  file=sys.__stderr__)
+        return 2
 
     if args.clean and not args.dry_run and out_root.exists():
         import shutil
@@ -874,7 +899,9 @@ def main() -> int:
                 print(f"    (dry run -- would convert to {export_out})")
                 continue
             try:
-                est = claude_to_markdown.convert_export(export_root, export_out)
+                est = claude_to_markdown.convert_export(
+                    export_root, export_out,
+                    resolution=claude_resolutions.get(export_root))
             except Exception as e:  # noqa: BLE001
                 print(f"    [warn] Claude export failed: {e}")
                 stats["errors"] += 1
@@ -887,6 +914,8 @@ def main() -> int:
             stats["claude_outputs_lost"] += est.get("outputs_unrecoverable", 0)
             stats["claude_outputs_edits_failed"] += est.get(
                 "outputs_edits_not_applied", 0)
+            stats["claude_outputs_noncompliant"] += est.get(
+                "outputs_noncompliant", 0)
             stats["claude_memories"] += (
                 est.get("project_memories", 0)
                 + est.get("conversations_memory", 0)
@@ -945,6 +974,10 @@ def main() -> int:
                   + (f", {stats['claude_outputs_edits_failed']} edit(s) "
                      f"not applied" if stats['claude_outputs_edits_failed']
                      else ""))
+        if stats['claude_outputs_noncompliant']:
+            print(f"  create_file rule   : {stats['claude_outputs_noncompliant']}"
+                  f" presented file(s) not written into outputs by create_file"
+                  f" (listed above as [create_file rule])")
     print(f"  markdown copied    : {stats['md']}")
     print(f"  txt wrapped        : {stats['txt']}")
     print(f"  media preserved    : {stats['media']}")
