@@ -72,6 +72,7 @@ calls everything in order. Copy `corpus_wrapper.template.bat` into a corpus's
 | `sync_subset.py` | Mirrors a selected subset of digested conversations |
 | `subset_inventory.py` | Reports what a digested archive offers for selection, and what nothing selects |
 | `split_export.py` | Splits an AI export into per-project exports before any conversion |
+| `claude_manifests.py` | Finds, checks and chooses Claude project manifests; stops the run if they are wrong |
 | `claude_outputs.py` | Rebuilds the files Claude wrote in a conversation from its tool calls |
 | `chatgpt_assets.py` | Resolves a ChatGPT export's asset pointers to the files beside it |
 | `inspect_chatgpt_assets.py` | Reports how an export references its media |
@@ -123,6 +124,7 @@ for supplying word lists and project glossaries that protect real terms.
 | File | Covers |
 |---|---|
 | [`pipeline-conventions.md`](pipeline-conventions.md) | **What this pipeline writes.** Filenames, frontmatter, sidecars, skip list, completeness |
+| [`docs/runbook.md`](docs/runbook.md) | Claude export to pushed corpus, step by step |
 | [`docs/quickstart.md`](docs/quickstart.md) | Running the batch files |
 | [`docs/pipeline-guide.md`](docs/pipeline-guide.md) | Full reference, including named pipeline inputs |
 | [`docs/brief-part-1-pipeline-and-libraries.md`](docs/brief-part-1-pipeline-and-libraries.md) | Design history: the pipeline and libraries |

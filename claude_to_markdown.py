@@ -64,6 +64,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import claude_manifests
 import claude_outputs
 
 
@@ -870,11 +871,32 @@ def find_existing_project_folder(parent: Path, project_id: str) -> Path | None:
     return None
 
 
-def convert_export(export_dir: Path, out_dir: Path) -> dict:
+def convert_export(export_dir: Path, out_dir: Path,
+                   resolution: "claude_manifests.Resolution | None" = None,
+                   lenient: bool = False) -> dict:
     """Convert a Claude export folder to Markdown under out_dir.
 
     Returns a stats dict including grouping diagnostics.
+
+    The project manifests are resolved and checked first (see
+    claude_manifests.py). If they fail, ManifestGateError is raised before
+    anything is written. A caller that has already resolved them -- the
+    pipeline does, for every export, before it writes anything at all --
+    passes the Resolution in.
     """
+    conversations = None
+    conv_path = export_dir / "conversations.json"
+    if conv_path.is_file():
+        try:
+            with conv_path.open(encoding="utf-8") as f:
+                conversations = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"  [warn] failed to read conversations.json: {e}")
+            conversations = []
+    if resolution is None:
+        resolution = claude_manifests.resolve(export_dir, conversations or [])
+        claude_manifests.gate(resolution, export_dir, lenient)
+
     stats = {
         "conversations": 0,
         "conversations_grouped": 0,
@@ -885,6 +907,7 @@ def convert_export(export_dir: Path, out_dir: Path) -> dict:
         "outputs_presented": 0,
         "outputs_unrecoverable": 0,
         "outputs_edits_not_applied": 0,
+        "outputs_noncompliant": 0,
         "manifests_loaded": 0,
         "manifest_stale_entries": 0,
         "manifest_title_mismatches": 0,
@@ -914,6 +937,8 @@ def convert_export(export_dir: Path, out_dir: Path) -> dict:
     # the manifest's `project_name` field acts as a secondary source.
     manifest_project_name: dict[str, str] = {}
 
+    # Grouping comes from the resolved manifests; this loop only collects the
+    # project metadata files, which are rendered as sidecars in pass 4.
     if projects_dir.is_dir():
         for jp in sorted(projects_dir.glob("*.json")):
             try:
@@ -923,61 +948,24 @@ def convert_export(export_dir: Path, out_dir: Path) -> dict:
                 print(f"  [warn] failed to read {jp.name}: {e}")
                 stats["errors"] += 1
                 continue
-
-            if _looks_like_manifest(data):
-                pid = data.get("project_uuid") or ""
-                stats["manifests_loaded"] += 1
-                # Record the manifest's project_name for use as a fallback
-                # when the project metadata file is missing from the export.
-                # Metadata files (when present) remain authoritative; this
-                # only fills gaps.
-                manifest_name = data.get("project_name") or ""
-                if pid and manifest_name:
-                    manifest_project_name[pid] = manifest_name
-                seen_in_this_manifest = manifest_uuids_by_project.setdefault(pid, set())
-                for entry in data.get("conversations") or []:
-                    if not isinstance(entry, dict):
-                        continue
-                    cuid = entry.get("uuid")
-                    title = entry.get("title") or ""
-                    if not cuid:
-                        continue
-                    seen_in_this_manifest.add(cuid)
-                    # Detect cross-manifest conflicts: a conversation can only
-                    # belong to one project. If we see the same UUID claimed
-                    # by two different projects, both manifests are wrong.
-                    if cuid in conversation_to_project and conversation_to_project[cuid] != pid:
-                        stats["manifest_uuid_conflicts"] += 1
-                        print(f"  [warn] conversation {cuid[:8]} claimed by "
-                              f"both projects {conversation_to_project[cuid][:8]} "
-                              f"and {pid[:8]}; keeping first")
-                        continue
-                    conversation_to_project[cuid] = pid
-                    manifest_title_by_conv[cuid] = title
-            elif _looks_like_project_metadata(data):
+            if _looks_like_project_metadata(data):
                 project_metadata_files.append((jp, data))
-                pid = data.get("uuid") or ""
-                project_name_by_id[pid] = data.get("name") or ""
 
-    # ---- Pass 1b: fill in missing project names from manifest fallback ---
-    # For any project_uuid that appears in a manifest but has no metadata
-    # file (or has an empty metadata name), use the manifest's project_name.
-    # This handles Claude exports that omit metadata for some projects.
-    for pid, mname in manifest_project_name.items():
-        if not project_name_by_id.get(pid):
-            project_name_by_id[pid] = mname
-            stats["manifest_name_fallbacks"] += 1
+    project_name_by_id.update(resolution.project_names)
+    conversation_to_project.update(resolution.conv_to_project)
+    manifest_title_by_conv.update(resolution.title_in_manifest)
+    for pid, mf in resolution.chosen.items():
+        manifest_uuids_by_project[pid] = {
+            e.get("uuid") for e in mf.data.get("conversations") or []
+            if isinstance(e, dict) and e.get("uuid")}
+    stats["manifests_loaded"] = len(resolution.chosen)
+    stats["manifest_name_fallbacks"] = resolution.name_fallbacks
+    for n in resolution.notes:
+        print(f"  [manifests] {n}")
 
     # ---- Pass 2: render conversations, routing into project subfolders ---
-    conv_path = export_dir / "conversations.json"
     conv_uuids_in_export: set[str] = set()
-    if conv_path.is_file():
-        try:
-            with conv_path.open(encoding="utf-8") as f:
-                conversations = json.load(f)
-        except (json.JSONDecodeError, OSError) as e:
-            print(f"  [warn] failed to read conversations.json: {e}")
-            conversations = []
+    if conversations is not None:
         if isinstance(conversations, list):
             conv_uuids_in_export = {c.get("uuid", "") for c in conversations
                                     if isinstance(c, dict) and c.get("uuid")}
@@ -1063,6 +1051,13 @@ def convert_export(export_dir: Path, out_dir: Path) -> dict:
                     stats["outputs_unrecoverable"] += len(manifest["unrecoverable"])
                     stats["outputs_edits_not_applied"] += sum(
                         e.get("edits_not_applied", 0) for e in manifest["files"])
+                    # The rule: a presented file is written into outputs by
+                    # create_file as its final creation step. Reported, not
+                    # enforced -- the file is recovered either way.
+                    for line in claude_outputs.compliance_problems(manifest):
+                        stats["outputs_noncompliant"] += 1
+                        print(f"  [create_file rule] \"{fm.get('title')}\" "
+                              f"-- {line}")
                 except Exception as e:  # noqa: BLE001
                     stats["errors"] += 1
                     print(f"  [warn] output recovery failed ({cuid}): {e}")
@@ -1118,6 +1113,12 @@ def convert_export(export_dir: Path, out_dir: Path) -> dict:
             used.add(dname)
             write_md(docs_dir / dname, dfm, dbody)
             stats["project_docs"] += 1
+
+    # Every usable manifest revision, verbatim, beside its project.
+    stats["manifest_revisions_filed"] = claude_manifests.write_sidecars(
+        resolution, out_dir / "projects",
+        lambda pid: f"{short_uuid(pid)}__"
+                    f"{slugify(project_name_by_id.get(pid) or 'untitled')}")
 
     # ---- Memories --------------------------------------------------------
     mem_path = export_dir / "memories.json"
@@ -1188,6 +1189,9 @@ def _cli() -> int:
     ap.add_argument("export", help="Path to the Claude export folder "
                                    "(contains conversations.json, projects/, etc.)")
     ap.add_argument("output", help="Path to the output folder")
+    ap.add_argument("--lenient-manifests", action="store_true",
+                    help="Report manifest problems instead of stopping. For "
+                         "exports made before manifests were checked.")
     args = ap.parse_args()
 
     export = Path(args.export)
@@ -1198,7 +1202,11 @@ def _cli() -> int:
               "(needs conversations.json, users.json, and projects/).")
         return 1
 
-    stats = convert_export(export, out)
+    try:
+        stats = convert_export(export, out, lenient=args.lenient_manifests)
+    except claude_manifests.ManifestGateError as e:
+        print(claude_manifests.banner(export, e.problems))
+        return 2
     print()
     print("Done.")
     for k, v in stats.items():

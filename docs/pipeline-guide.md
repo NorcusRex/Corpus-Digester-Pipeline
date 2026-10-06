@@ -490,7 +490,7 @@ update manifest for <PROJECT_UUID> <Project Name>
 
 Either form works, and with arguments missing the skill asks for them. It cannot see the project UUID or name itself, which is why both are supplied rather than inferred. The hand-written prompt this section used to carry is superseded. It predated the skill and omitted `project_name`, so a manifest made by following it had no name to fall back on — harmless where the export carried project metadata, and `__untitled` where it did not.
 
-Save the resulting JSON files into the export's projects/ folder (alongside the project metadata files) before running the pipeline. The converter detects them by content (top-level project_uuid + conversations keys), not filename.
+**Where the pipeline finds them.** From format 1.1 the skill writes each manifest with `create_file` into the chat's outputs and presents it, so its full text is in the export's `conversations.json`. The pipeline reads it from there: nothing is downloaded or copied, and every regeneration is kept as a dated, numbered revision (`YYYY-MM-DD-HHMM__<uuid>_manifest_r<N>_v1.1.json`). Generate them in each project's dedicated `Update manifest for <project>` chat, then export. A manifest dropped into the export's `projects/` folder, the older way, is still read, and the newest manifest per project wins. See `docs/runbook.md` for the procedure, and `docs/handoffs/2026-10-05-1207__manifest-format-1-5-and-skill-3-4.md` for the format change, which is pending the Designer.
 
 ```
 With manifests present, conversations route into per-project
@@ -502,7 +502,9 @@ project_name fields.
 
 Folder names are sticky across re-runs: rename a project folder by hand and the converter will keep using your renamed folder rather than recreating the default name.
 
-The converter validates manifests at conversion time. After each run, the summary reports:
+**The manifest gate.** Before anything is written -- `--clean` included -- `claude_manifests.py` checks every Claude export's manifests, and any failure stops the run with the corpus untouched and a banner listing every problem: a project with no manifest, a UUID that is no project in the export, a name that does not match the export's, a conversation claimed by two projects, a manifest listing a chat the export lacks or older than the latest message in one of its chats, a conversation in no project, and for format 1.1 a filename that disagrees with its contents, a manifest never presented or edited after it was written, or a revision not higher than the last. `split_export.py` runs the same gate. `--lenient-manifests` reports instead of stopping, and is only for exports made before manifests were written this way. The chat that wrote a manifest is placed in that manifest's project, whether or not the manifest lists it, and every valid revision is filed verbatim in `projects/<short-uuid>__<slug>_manifests/`.
+
+After each run, the summary reports:
 
 - manifests loaded
 - conversations grouped vs ungrouped
@@ -511,9 +513,9 @@ The converter validates manifests at conversion time. After each run, the summar
 - title mismatches (conversation renamed in Claude after manifest was generated)
 - UUID conflicts (same conversation claimed by two project manifests -- a bug in the manifests, please regenerate)
 
-Workflow tip: generate manifests AFTER downloading the export, not before. That eliminates the drift window where new chats happen between manifest generation and export.
+Order: generate the manifests, then export straight away. A manifest made before the export is checked against it -- a chat used after its project's manifest stops the run -- so the old advice to generate after downloading no longer applies.
 
-Recent_chats has a known pagination bug that may cause it to skip exactly one conversation at the boundary between batches (timestamps shared across the boundary get dropped). After generating each manifest, glance at the count vs what you see in the sidebar; if off-by-one, manually patch the missing conversation's UUID and title into the JSON.
+Pagination: conversations sharing an `updated_at` at a page boundary can be dropped by the enumeration. Skill 3.3 deduplicates and checks those boundaries; a conversation still missed is caught by the gate as a conversation in no project. Regenerate rather than patching the JSON by hand -- a hand edit is exactly what the gate refuses.
 
 LEGACY CONVERSATIONS: very old Claude conversations may have null parent_message_uuid on every message (threading wasn't tracked yet). The converter detects this and falls back to a flat chronological sequence with no inactive branches, so the content is still preserved correctly.
 
