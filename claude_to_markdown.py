@@ -60,6 +60,7 @@ from __future__ import annotations
 import json
 import re
 from collections import defaultdict
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -871,32 +872,88 @@ def find_existing_project_folder(parent: Path, project_id: str) -> Path | None:
     return None
 
 
+@dataclass
+class ExportData:
+    """Everything the renderer needs, however it was gathered.
+
+    `load_export()` fills it from one export folder. `claude_archive.merge()`
+    fills it from several, keeping the newest version of each thing and the
+    older versions that hold something the newest lacks.
+    """
+    conversations: list = field(default_factory=list)
+    # Older versions of conversations, kept because they hold messages the
+    # newest version lacks: (conversation, "as-of" label).
+    earlier: list = field(default_factory=list)
+    # (label for warnings, project metadata dict)
+    project_metadata: list = field(default_factory=list)
+    # memories.json contents, newest last: (label, memories list). The last
+    # is rendered normally; an older one only where its text differs.
+    memory_versions: list = field(default_factory=list)
+    users: object = None
+    resolution: "claude_manifests.Resolution | None" = None
+    # Filled by render_export: (conversation id, as-of label or "") -> the
+    # file written for it, so a caller can tidy up a file the same
+    # conversation was written to before (moved project, renamed chat).
+    written: dict = field(default_factory=dict)
+
+
+def load_export(export_dir: Path) -> ExportData:
+    """Read one Claude export folder. Writes nothing."""
+    data = ExportData()
+
+    def read(name):
+        path = export_dir / name
+        if not path.is_file():
+            return None
+        try:
+            with path.open(encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"  [warn] failed to read {name}: {e}")
+            return None
+
+    convs = read("conversations.json")
+    data.conversations = convs if isinstance(convs, list) else []
+    projects_dir = export_dir / "projects"
+    if projects_dir.is_dir():
+        for jp in sorted(projects_dir.glob("*.json")):
+            try:
+                with jp.open(encoding="utf-8") as f:
+                    meta = json.load(f)
+            except (json.JSONDecodeError, OSError) as e:
+                print(f"  [warn] failed to read {jp.name}: {e}")
+                continue
+            if _looks_like_project_metadata(meta):
+                data.project_metadata.append((jp.name, meta))
+    mems = read("memories.json")
+    if mems is not None:
+        data.memory_versions.append(("", mems))
+    data.users = read("users.json")
+    return data
+
+
 def convert_export(export_dir: Path, out_dir: Path,
                    resolution: "claude_manifests.Resolution | None" = None,
                    lenient: bool = False) -> dict:
-    """Convert a Claude export folder to Markdown under out_dir.
-
-    Returns a stats dict including grouping diagnostics.
+    """Convert one Claude export folder to Markdown under out_dir.
 
     The project manifests are resolved and checked first (see
     claude_manifests.py). If they fail, ManifestGateError is raised before
-    anything is written. A caller that has already resolved them -- the
-    pipeline does, for every export, before it writes anything at all --
-    passes the Resolution in.
+    anything is written. Several exports are merged by claude_archive.py,
+    which calls render_export() directly.
     """
-    conversations = None
-    conv_path = export_dir / "conversations.json"
-    if conv_path.is_file():
-        try:
-            with conv_path.open(encoding="utf-8") as f:
-                conversations = json.load(f)
-        except (json.JSONDecodeError, OSError) as e:
-            print(f"  [warn] failed to read conversations.json: {e}")
-            conversations = []
+    data = load_export(export_dir)
     if resolution is None:
-        resolution = claude_manifests.resolve(export_dir, conversations or [])
+        resolution = claude_manifests.resolve(export_dir, data.conversations)
         claude_manifests.gate(resolution, export_dir, lenient)
+    data.resolution = resolution
+    return render_export(data, out_dir)
 
+
+def render_export(data: ExportData, out_dir: Path) -> dict:
+    """Write an export's Markdown under out_dir. Returns a stats dict."""
+    resolution = data.resolution or claude_manifests.Resolution()
+    conversations = data.conversations
     stats = {
         "conversations": 0,
         "conversations_grouped": 0,
@@ -908,6 +965,7 @@ def convert_export(export_dir: Path, out_dir: Path,
         "outputs_unrecoverable": 0,
         "outputs_edits_not_applied": 0,
         "outputs_noncompliant": 0,
+        "earlier_versions": 0,
         "manifests_loaded": 0,
         "manifest_stale_entries": 0,
         "manifest_title_mismatches": 0,
@@ -925,7 +983,6 @@ def convert_export(export_dir: Path, out_dir: Path,
     #   conversation_to_project : conversation_uuid -> project_uuid (from manifests)
     #   manifest_title_by_conv : conversation_uuid -> manifest's recorded title
     # The split between manifests and metadata is by file content, not name.
-    projects_dir = export_dir / "projects"
     project_name_by_id: dict[str, str] = {}
     conversation_to_project: dict[str, str] = {}
     manifest_title_by_conv: dict[str, str] = {}
@@ -937,19 +994,9 @@ def convert_export(export_dir: Path, out_dir: Path,
     # the manifest's `project_name` field acts as a secondary source.
     manifest_project_name: dict[str, str] = {}
 
-    # Grouping comes from the resolved manifests; this loop only collects the
-    # project metadata files, which are rendered as sidecars in pass 4.
-    if projects_dir.is_dir():
-        for jp in sorted(projects_dir.glob("*.json")):
-            try:
-                with jp.open(encoding="utf-8") as f:
-                    data = json.load(f)
-            except (json.JSONDecodeError, OSError) as e:
-                print(f"  [warn] failed to read {jp.name}: {e}")
-                stats["errors"] += 1
-                continue
-            if _looks_like_project_metadata(data):
-                project_metadata_files.append((jp, data))
+    # Grouping comes from the resolved manifests; the project metadata is
+    # rendered as sidecars in pass 4.
+    project_metadata_files = list(data.project_metadata)
 
     project_name_by_id.update(resolution.project_names)
     conversation_to_project.update(resolution.conv_to_project)
@@ -986,7 +1033,9 @@ def convert_export(export_dir: Path, out_dir: Path,
             # Track filenames per output directory so collisions get suffixed
             # only within the directory they collide in.
             seen_filenames_per_dir: dict[Path, set[str]] = {}
-            for conv in conversations:
+            main_file: dict[str, str] = {}
+            work = [(c, "") for c in conversations] + list(data.earlier)
+            for conv, as_of in work:
                 try:
                     fm, body, dstr = render_conversation(conv)
                 except Exception as e:  # noqa: BLE001
@@ -1025,12 +1074,23 @@ def convert_export(export_dir: Path, out_dir: Path,
 
                 slug = slugify(fm["title"])
                 base = f"{dstr}__{slug}"
+                if as_of:
+                    # An older version, kept because it holds messages the
+                    # newest lacks (deleted in Claude since). It sits beside
+                    # the newest and says so.
+                    base = f"{base}__as-of-{as_of}"
+                    fm["earlier_version"] = True
+                    fm["as_of_export"] = as_of
+                    if cuid in main_file:
+                        fm["superseded_by"] = main_file[cuid]
                 fname = base + ".md"
                 seen = seen_filenames_per_dir.setdefault(target_dir, set())
                 if fname in seen:
                     suffix = short_uuid(cuid)
                     fname = f"{base}__{suffix}.md"
                 seen.add(fname)
+                if not as_of:
+                    main_file[cuid] = fname
 
                 # Outputs: the files Claude wrote, rebuilt from its tool
                 # calls and written beside the conversation. See
@@ -1063,7 +1123,13 @@ def convert_export(export_dir: Path, out_dir: Path,
                     print(f"  [warn] output recovery failed ({cuid}): {e}")
 
                 write_md(target_dir / fname, fm, body)
-                stats["conversations"] += 1
+                data.written[(cuid, as_of)] = target_dir / fname
+                if as_of:
+                    stats["earlier_versions"] += 1
+                    stats["conversations_grouped" if project_id else
+                          "conversations_ungrouped"] -= 1
+                else:
+                    stats["conversations"] += 1
 
     # ---- Pass 3: detect stale manifest entries ---------------------------
     # A manifest entry is "stale" if its UUID isn't in conversations.json.
@@ -1080,9 +1146,9 @@ def convert_export(export_dir: Path, out_dir: Path,
             fm, body = render_project_metadata(proj)
         except Exception as e:  # noqa: BLE001
             stats["errors"] += 1
-            print(f"  [warn] project metadata failed ({jp.name}): {e}")
+            print(f"  [warn] project metadata failed ({jp}): {e}")
             continue
-        uid = proj.get("uuid") or jp.stem
+        uid = proj.get("uuid") or Path(jp).stem
         slug = slugify(proj.get("name") or "untitled")
         # Annotate with conversation count from the matching manifest
         # if we have one. Useful at-a-glance signal.
@@ -1104,7 +1170,7 @@ def convert_export(export_dir: Path, out_dir: Path,
                 dfm, dbody = render_project_doc(doc, proj)
             except Exception as e:  # noqa: BLE001
                 stats["errors"] += 1
-                print(f"  [warn] project doc failed ({jp.name}): {e}")
+                print(f"  [warn] project doc failed ({jp}): {e}")
                 continue
             stem = slugify(Path(project_doc_name(doc)).stem)
             dname = f"{stem}.md"
@@ -1121,56 +1187,60 @@ def convert_export(export_dir: Path, out_dir: Path,
                     f"{slugify(project_name_by_id.get(pid) or 'untitled')}")
 
     # ---- Memories --------------------------------------------------------
-    mem_path = export_dir / "memories.json"
-    if mem_path.is_file():
+    # The newest memories are written as before. An older version is kept,
+    # suffixed with its export's date, wherever its text differs: memory is
+    # rewritten over time and the corpus keeps what it said.
+    def memory_texts(memories) -> dict[str, tuple]:
+        """{output stem: (kind, project id, text)} for one memories.json."""
+        out: dict[str, tuple] = {}
+        if not isinstance(memories, list):
+            return out
+        for entry in memories:
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("conversations_memory"):
+                out["conversations_memory"] = (
+                    "conv", "", entry["conversations_memory"])
+            proj_mems = entry.get("project_memories") or {}
+            if isinstance(proj_mems, dict):
+                for pid, ptext in proj_mems.items():
+                    slug = slugify(project_name_by_id.get(pid) or "untitled")
+                    out[f"project_{short_uuid(pid)}__{slug}"] = ("proj", pid, ptext)
+        return out
+
+    versions = [(label, memory_texts(m)) for label, m in data.memory_versions]
+    newest = versions[-1][1] if versions else {}
+    to_write = [(stem, item, "") for stem, item in newest.items()]
+    for label, texts in versions[:-1]:
+        for stem, item in texts.items():
+            if stem in newest and newest[stem][2] == item[2]:
+                continue
+            to_write.append((stem, item, label))
+    for stem, (kind, pid, text), label in to_write:
         try:
-            with mem_path.open(encoding="utf-8") as f:
-                memories = json.load(f)
-        except (json.JSONDecodeError, OSError) as e:
-            print(f"  [warn] failed to read memories.json: {e}")
-            memories = []
-        # memories.json is an array; we expect one entry per account.
-        if isinstance(memories, list):
-            for entry in memories:
-                if not isinstance(entry, dict):
-                    continue
-                conv_mem = entry.get("conversations_memory")
-                if conv_mem:
-                    try:
-                        fm, body = render_conversations_memory(conv_mem)
-                    except Exception as e:  # noqa: BLE001
-                        stats["errors"] += 1
-                        print(f"  [warn] conversations_memory failed: {e}")
-                    else:
-                        write_md(out_dir / "memories" / "conversations_memory.md",
-                                 fm, body)
-                        stats["conversations_memory"] += 1
-                proj_mems = entry.get("project_memories") or {}
-                if isinstance(proj_mems, dict):
-                    for pid, ptext in proj_mems.items():
-                        try:
-                            fm, body = render_project_memory(
-                                pid, ptext, project_name_by_id.get(pid)
-                            )
-                        except Exception as e:  # noqa: BLE001
-                            stats["errors"] += 1
-                            print(f"  [warn] project memory failed ({pid}): {e}")
-                            continue
-                        slug = slugify(project_name_by_id.get(pid) or "untitled")
-                        fname = f"project_{short_uuid(pid)}__{slug}.md"
-                        write_md(out_dir / "memories" / fname, fm, body)
-                        stats["project_memories"] += 1
+            if kind == "conv":
+                fm, body = render_conversations_memory(text)
+            else:
+                fm, body = render_project_memory(
+                    pid, text, project_name_by_id.get(pid))
+        except Exception as e:  # noqa: BLE001
+            stats["errors"] += 1
+            print(f"  [warn] memory failed ({stem}): {e}")
+            continue
+        if label:
+            fm["as_of_export"] = label
+        name = f"{stem}__as-of-{label}.md" if label else f"{stem}.md"
+        write_md(out_dir / "memories" / name, fm, body)
+        stats["conversations_memory" if kind == "conv"
+              else "project_memories"] += 1
 
     # ---- Users -----------------------------------------------------------
-    users_path = export_dir / "users.json"
-    if users_path.is_file():
+    if data.users is not None:
         try:
-            with users_path.open(encoding="utf-8") as f:
-                users = json.load(f)
-            fm, body = render_users(users)
+            fm, body = render_users(data.users)
             write_md(out_dir / "users.md", fm, body)
             stats["users"] += 1
-        except (json.JSONDecodeError, OSError, Exception) as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             stats["errors"] += 1
             print(f"  [warn] users.json failed: {e}")
 

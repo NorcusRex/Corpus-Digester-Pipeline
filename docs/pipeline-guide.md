@@ -396,7 +396,9 @@ CONVERSATIONS.JSON  (ChatGPT exports)
 
 CLAUDE DATA EXPORTS A Claude export is a folder containing `conversations.json`, `users.json`, `memories.json`, and a projects/ subfolder. The pipeline detects these automatically and converts them as a unit (skipping the individual files during the per-file walk).
 
-Output structure mirrors the source path. Inside the converted export folder you get:
+**Exports are incremental and merged.** Every Claude export under the input is digested into one tree, `2-Digested/claude-merged/`, rather than a folder per export: a chat may be deleted from Claude after it is exported, so no single export holds everything. The newest version of each conversation is written; an older version is kept beside it, suffixed `__as-of-<date>`, when it holds messages the newest lacks. Nothing is dropped because a later export lacks it. A conversation moved to another project or renamed is written at its new path and its old file removed. `_claude-exports.json` at the corpus root records each export taken in; the manifest gate runs only on exports not yet recorded, and an export from before the gate is accepted once with `claude_archive.py accept <export>`. See `claude_archive.py` and `pipeline-conventions.md`, *Claude exports*. (`claude_to_markdown.py` run by hand on one export still converts just that export into the folder you name.)
+
+Inside `claude-merged/` you get:
 
 conversations/
 

@@ -81,6 +81,12 @@ VERSIONED_NAME_RE = re.compile(r"^.+-(?:v\d+(?:\.\d+)*|draft\d*)\.[A-Za-z0-9]+$"
 TIMESTAMPED_NAME_RE = re.compile(
     r"^\d{4}-\d{2}-\d{2}-\d{4}__[a-z0-9]+(?:-[a-z0-9]+)*\.[A-Za-z0-9]+$")
 
+# Every Claude export is digested into this one merged tree (see
+# claude_archive.py; the same name as claude_archive.MERGED_DIR).
+CLAUDE_MERGED_DIR = "claude-merged"
+EARLIER_VERSION_RE = re.compile(r'^earlier_version:\s*"?true"?\s*$',
+                                re.MULTILINE | re.IGNORECASE)
+
 # Duplicate fingerprinting.
 WINDOW_TOKENS = 40      # tokens per fingerprint window
 WINDOW_COUNT = 8        # windows taken through each document
@@ -256,12 +262,18 @@ def check_completeness(raw_root: Path, index: DigestedIndex) -> list[str]:
     export_out_ok: dict[Path, bool] = {}
 
     for export_root in export_roots:
-        # An export is converted wholesale. It is accounted for when the
-        # mirrored output folder exists and holds Markdown.
-        try:
-            rel = export_root.relative_to(raw_root.resolve()).as_posix()
-        except ValueError:
-            rel = export_root.name
+        # An export is converted wholesale. It is accounted for when its
+        # output folder exists and holds Markdown: the mirrored folder for a
+        # ChatGPT export, the one merged tree for every Claude export (they
+        # are merged across exports, so none has a folder of its own).
+        if (export_root / "users.json").is_file() and \
+                (export_root / "projects").is_dir():
+            rel = CLAUDE_MERGED_DIR
+        else:
+            try:
+                rel = export_root.relative_to(raw_root.resolve()).as_posix()
+            except ValueError:
+                rel = export_root.name
         export_out_ok[export_root] = any(
             d == rel or d.startswith(rel + "/") for d in index.output_dirs
         )
@@ -410,6 +422,14 @@ def check_duplicates(index: DigestedIndex) -> tuple[list[dict], int]:
     tokens_by_file: dict[Path, list[str]] = {}
 
     for md in index.md_files:
+        # A kept earlier version of a Claude conversation overlaps its newest
+        # version by design; it is history, not an accidental copy.
+        try:
+            head = md.read_text(encoding="utf-8", errors="replace")[:4096]
+        except OSError:
+            head = ""
+        if EARLIER_VERSION_RE.search(head.split("\n---", 1)[0]):
+            continue
         toks = normalized_tokens(md)
         if len(toks) < WINDOW_TOKENS:
             continue

@@ -8,8 +8,10 @@ wrapper's flags are in [`quickstart.md`](quickstart.md).
 Two kinds of corpus are involved:
 
 - **The export archive**, `I:\AI\Backups\Claude\Exported`. Raw exports go into
-  its `1-Raw`; it digests them and groups conversations into project folders.
-  Nobody searches it directly.
+  its `1-Raw` and stay there: exports are incremental, so each one is part of
+  the record. Every export is digested into one merged tree,
+  `2-Digested\claude-merged`, grouped into project folders. Nobody searches it
+  directly.
 - **Topic corpora**, such as Loom. Each mirrors the project folders it wants
   out of the archive (its selection list), digests them, and is pushed to
   Drive.
@@ -39,10 +41,15 @@ but if in doubt, run it: the digest stops if a manifest is out of date.
 **Then export straight away.** A chat touched after its project's manifest
 makes that manifest out of date, and the digest will stop.
 
+**After the export, you may delete chats from Claude.** Once an export is
+digested, its chats are in the corpus for good; a later export without them
+loses nothing.
+
 ## 2. Export and unzip
 
 Request the data export from claude.ai's settings, download it, and unzip it
-into the archive's raw tier as its own folder:
+into the archive's raw tier as its own folder, beside the earlier ones (never
+replacing them):
 
 ```
 I:\AI\Backups\Claude\Exported\1-Raw\<export folder>\
@@ -77,11 +84,33 @@ into a project), export again, replace the export folder, and rerun. Do not
 reach for `--lenient-manifests`: it exists only for exports made before
 manifests were written this way.
 
-**Open decision — older exports in `1-Raw`.** The check runs on every Claude
-export in `1-Raw`, and exports made before this change (such as
-`2026-05-9-15-24-00`, whose manifests were dropped in by hand) do not pass it.
-Until PM decides how those are handled, a run over a `1-Raw` holding them will
-stop.
+Only exports new to the archive are checked. Each one is recorded in
+`I:\AI\Backups\Claude\Exported\_claude-exports.json` once it digests, and is
+never checked again.
+
+## One-time setup for the merged archive
+
+Do these once, the first time you run this version.
+
+1. **Accept each export made before manifests were checked.** They cannot
+   pass the check and are not wrong for it. For each, once:
+
+   ```
+   python I:\AI\Backups\_Tools\Corpus-Digester-Pipeline\claude_archive.py accept ^
+       I:\AI\Backups\Claude\Exported\1-Raw\2026-05-9-15-24-00
+   ```
+
+   It lists what the check would have found, then records the export as
+   "accepted without manifest check".
+2. **Rebuild the archive's digest once with `--clean`** (add it to the step 4
+   command). Older runs wrote one folder per export in `2-Digested`; the
+   merged tree replaces them, and `--clean` clears the old folders. The
+   ledger is at the archive root and is not affected.
+3. **Check `SRC_CLAUDE` in each topic corpus's wrapper.** It must be the
+   archive's `2-Digested` folder itself —
+   `I:\AI\Backups\Claude\Exported\2-Digested` — not a folder inside it. The
+   template once shipped with `...\2-Digested\conversations`, which never
+   matched what the sync expects.
 
 ## 5. Read the run summary
 
@@ -90,6 +119,9 @@ Look for these lines near the end:
 | Line | Means | Action |
 |---|---|---|
 | `claude exports : … conversations, … projects, … knowledge docs` | What was converted | None |
+| `N conversations, X in more than one export, Y earlier version(s) kept` | The merge: `Y` older versions kept because they hold messages since deleted in Claude | None |
+| `conversation file(s) moved … old copies removed` | Chats moved to another project or renamed; their old files are gone, the new ones written | None |
+| `ledger: N new export(s) recorded` | This run's new exports passed the check and are now part of the record | None |
 | `claude outputs : N recovered, M not recoverable` | Files Claude wrote, rebuilt into each conversation's `_outputs` folder; `M` were binary | None; the binaries are listed in each folder's `_recovered-outputs.json` |
 | `[create_file rule] "<chat>" -- <file>: …` | A presented file was not written into outputs by `create_file` | Tell the skill or chat responsible; the file is recovered anyway |
 | `errors : 0` | — | Anything above 0: read the warnings above it |

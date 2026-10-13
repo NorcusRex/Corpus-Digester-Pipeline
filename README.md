@@ -72,6 +72,7 @@ calls everything in order. Copy `corpus_wrapper.template.bat` into a corpus's
 | `sync_subset.py` | Mirrors a selected subset of digested conversations |
 | `subset_inventory.py` | Reports what a digested archive offers for selection, and what nothing selects |
 | `split_export.py` | Splits an AI export into per-project exports before any conversion |
+| `claude_archive.py` | Merges every Claude export into one tree; keeps the ledger of exports taken in; `accept` for pre-gate exports |
 | `claude_manifests.py` | Finds, checks and chooses Claude project manifests; stops the run if they are wrong |
 | `claude_outputs.py` | Rebuilds the files Claude wrote in a conversation from its tool calls |
 | `chatgpt_assets.py` | Resolves a ChatGPT export's asset pointers to the files beside it |
