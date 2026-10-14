@@ -371,6 +371,32 @@ def unrecoverable_entry(rec: Recovery, path: str, chosen) -> dict:
     return {"path": path, "reason": "no text in the export; likely binary"}
 
 
+OUTPUTS_ROOT = "/mnt/user-data/outputs"
+
+
+def is_compliant(f: TrackedFile) -> bool:
+    """A presented file is compliant when create_file wrote it directly into
+    outputs, at the path it was presented from. Edits made there afterwards
+    are fine; arriving by `cp`/`mv` from a working folder is not, and neither
+    is a file no create_file wrote at all (a binary built by a script)."""
+    return (f.written_as == f.path
+            and f.path.startswith(OUTPUTS_ROOT + "/"))
+
+
+def compliance_problems(manifest: dict) -> list[str]:
+    """Presented files that break the rule, one line each, for the run log."""
+    out = []
+    for e in manifest.get("files", []):
+        if e.get("presented") and not e.get("compliant", True):
+            out.append(f"{e['name']}: copied into place from {e['written_as']}"
+                       if e["written_as"] != e["path"] else
+                       f"{e['name']}: written outside outputs ({e['path']})")
+    for e in manifest.get("unrecoverable", []):
+        out.append(f"{posixpath.basename(e['path'])}: not written by "
+                   f"create_file ({e['reason']})")
+    return out
+
+
 def write_outputs(rec: Recovery, out_dir: Path, conv: dict) -> dict:
     """Write the recovered files and their manifest. Returns the manifest.
 
@@ -414,6 +440,8 @@ def write_outputs(rec: Recovery, out_dir: Path, conv: dict) -> dict:
             entry["edits_not_applied"] = f.edits_failed
         if f.inactive_branch:
             entry["inactive_branch"] = True
+        if presented:
+            entry["compliant"] = is_compliant(f)
         manifest["files"].append(entry)
     (out_dir / MANIFEST_NAME).write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",

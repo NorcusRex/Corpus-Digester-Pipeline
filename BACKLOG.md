@@ -17,6 +17,8 @@ reasoning is worth being able to find.
 | 3 | Review the Drive collision report, then delete the Sheets | Nick |
 | 4 | Choose which books go in the RPG search library | Nick |
 | 5 | Multi-word keywords | Nick and Claude, after the first digest |
+| 6 | Manifest format 1.5 and skill 3.4 | Designer, via Nick |
+| 7 | One-time switch to the merged Claude archive | Nick (runbook) |
 | — | Acceptance tiers 1–4 | Out of scope — the reporting skill's job |
 
 ---
@@ -148,6 +150,44 @@ known fault, and one only a real `ocrmypdf` can answer.
 
 **What remains here is yours, not the code's:** choosing which books go in
 `1-Raw`.
+
+---
+
+## 6. Manifest format 1.5 and skill 3.4
+
+**Handed off.** `docs/handoffs/2026-10-05-1207__manifest-format-1-5-and-skill-3-4.md`
+carries the proposal to the Designer: dated, numbered manifest filenames, a
+`revision` field, the skill writing with `create_file` into outputs from one
+dedicated chat per project, and `closeout-chat` reminding rather than
+generating. The pipeline already reads format 1.1 as proposed; if the Designer
+changes a detail, the pipeline follows. Until skill 3.4 is installed, manifests
+are not written in a form the pipeline can read from the export.
+
+## 7. Exports are incremental — resolved
+
+**Ruled by Nick: there is no superseded export.** Exports are incremental —
+chats are exported, digested, and may then be deleted from Claude — so every
+export is part of the record. An earlier entry here proposed moving "superseded"
+exports out of `1-Raw` on the premise that each export is a full snapshot. That
+premise was wrong.
+
+Built instead (`claude_archive.py`):
+
+- Every Claude export is merged into one tree, `2-Digested/claude-merged/`.
+  The newest version of each conversation is written; an older version is
+  kept beside it when it holds messages since deleted in Claude (Nick: keep
+  them). Nothing is dropped because a later export lacks it.
+- The ledger `_claude-exports.json` at the corpus root records each export
+  taken in. The manifest gate runs only on exports not yet in it.
+- An export from before the gate is accepted once, explicitly:
+  `claude_archive.py accept <export>`.
+- The topic-corpus sync reads the merged tree, not the newest export folder,
+  which would have lost every chat deleted from Claude after an earlier
+  export.
+
+**One-time steps** before the next archive digest are in `docs/runbook.md`:
+accept the May export, rebuild once with `--clean`, and check `SRC_CLAUDE` in
+each corpus wrapper.
 
 ---
 

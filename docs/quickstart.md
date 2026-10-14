@@ -1,5 +1,8 @@
 # Quickstart
 
+**New Claude export?** Follow [`runbook.md`](runbook.md): it covers manifests,
+exporting, digesting and pushing, in order.
+
 The short operational cheat-sheet. For the reasoning behind any of it — why
 `rclone copy` instead of Drive Desktop, what "stale" means, the failure modes —
 see [`pipeline-guide.md`](pipeline-guide.md). Where this file and the guide

@@ -7,9 +7,10 @@ REM   Mirror a selected subset of digested AI conversations into
 REM   a corpus. The selection list names which conversations
 REM   belong to this corpus; everything else is left behind.
 REM
-REM   Each source is a digested export tree holding dated folders.
-REM   The NEWEST dated folder is used, and its "conversations"
-REM   subfolder is the actual source.
+REM   Each source is a digested export tree. For Claude that is the
+REM   merged tree, claude-merged\conversations, holding every export.
+REM   Otherwise the NEWEST dated folder is used, and its
+REM   "conversations" subfolder is the actual source.
 REM
 REM   Usage:
 REM     sync_gdrive_corpus.bat <SELECTION_LIST> <SRC_ROOT> <DEST> [FLAGS]
@@ -80,8 +81,14 @@ if not exist "%SRC_ROOT%" (
     exit /b 2
 )
 
-REM Newest dated folder under the source root.
+REM Claude exports are merged across every export into one tree
+REM (claude_archive.py): exports are incremental, so the newest one
+REM alone would leave out chats exported earlier and since deleted
+REM from Claude. Use the merged tree when the source has one.
 set "SRC="
+if exist "%SRC_ROOT%\claude-merged\conversations\" set "SRC=%SRC_ROOT%\claude-merged\conversations"
+
+REM Otherwise the newest dated folder under the source root (ChatGPT).
 for /f "delims=" %%D in ('dir "%SRC_ROOT%" /ad /b /o-d 2^>nul') do (
     if not defined SRC set "SRC=%SRC_ROOT%\%%D\conversations"
 )

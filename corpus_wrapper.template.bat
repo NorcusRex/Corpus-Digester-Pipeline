@@ -110,7 +110,10 @@ REM Run subset_inventory.py against a source to see what is
 REM there to select and what nothing selects yet.
 set "SELLIST_CLAUDE=%~dp0subset_claude.txt"
 set "SELLIST_CHATGPT=%~dp0subset_chatgpt.txt"
-set "SRC_CLAUDE=I:\AI\Backups\Claude\Exported\2-Digested\conversations"
+REM SRC_* is the archive's 2-Digested folder itself, not a folder inside
+REM it: the sync finds claude-merged\conversations (Claude) or the newest
+REM dated folder's conversations (ChatGPT) beneath it.
+set "SRC_CLAUDE=I:\AI\Backups\Claude\Exported\2-Digested"
 set "SRC_CHATGPT=I:\AI\Backups\ChatGPT\Exported\2-Digested"
 set "DST_CLAUDE=%CORPUS_ROOT%\1-Raw\FromNick\Notes\AI\Claude\Conversations\Exported"
 set "DST_CHATGPT=%CORPUS_ROOT%\1-Raw\FromNick\Notes\AI\ChatGPT\Conversations\Exported"

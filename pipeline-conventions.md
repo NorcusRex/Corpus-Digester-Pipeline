@@ -1,6 +1,6 @@
 # Pipeline Conventions
 
-**Version 1.2**
+**Version 1.3**
 
 What the digestion pipeline writes: filenames, frontmatter, sidecars, and what
 it skips. Owned by this repository, and by nothing else — edit it freely as the
@@ -16,6 +16,12 @@ v1.2 adds *Authored tiers* and *Scanned PDFs*, both describing behaviour that
 did not exist when v1.1 was written. The version moved with the content, which
 is the rule this repository applies to the shared files and should not exempt
 its own.
+
+v1.3 adds *Claude exports* — the merged tree, the ledger and the manifest
+gate — and the sidecars that came with them: project knowledge, recovered
+outputs and filed manifests. It restates *What the pipeline never does*, whose
+"never deletes" had become too broad to be true. v1.2 fell behind the code for
+four merges before this; that lapse is the reason for the paragraph above.
 
 ## Scope
 
@@ -45,6 +51,11 @@ nothing for a version to track.
 
 **Sidecars** keep the original's full name, extension included, plus `.md`.
 `notes.zip` and `notes.docx` therefore cannot collide on one sidecar.
+
+**An earlier version of a Claude conversation** — kept because it holds
+messages the newest version lacks — is the newest's name plus
+`__as-of-YYYY-MM-DD` (the date of the export it came from; `-HHMM` is added
+when two exports share a day). See *Claude exports*.
 
 Where two sources would produce the same output name in one run, the second
 gets a `-2`, `-3` suffix. Re-runs overwrite rather than accumulate.
@@ -122,6 +133,22 @@ converted, recording the original's name, type, size and `source_path`. It
 makes the original findable without duplicating it. Media and AI-export
 auxiliary files are copied through instead, because a digested conversation
 referencing its own images needs them beside it.
+
+**`<project>_docs/`** — beside a Claude project's metadata file, one Markdown
+file per project-knowledge document, its text verbatim from the export
+(`projects/<uuid>.json`, `docs[].content`).
+
+**`<project>_manifests/`** — beside a Claude project's metadata file, every
+valid revision of its manifest written in a conversation, verbatim, under the
+manifest's own dated filename.
+
+**`<conversation>_outputs/`** — beside a Claude conversation, the files Claude
+wrote in it, rebuilt from its tool calls (`claude_outputs.py`), byte-identical,
+with `_recovered-outputs.json` recording where each came from, whether it was
+presented, and what could not be recovered. **That manifest marks the folder:**
+the metadata pass, NotebookLM sidecars, the index, `clean_stale.py` and the
+self-check all leave such a folder alone, so a recovered file is never stamped
+or rewritten. The conversation carries the same text and links to each file.
 
 **`<artifact-name.ext>.md` in `4-Canon`** — a catalog record beside a released
 artifact, written by `tier_sidecars.py`. **The artifact itself is never
@@ -208,6 +235,12 @@ observed that the two disagreed.
 - Tooling folders, `_Tools/`, `node_modules/`
 - OS clutter, `.DS_Store`, `Thumbs.db`, `desktop.ini`
 
+Separately, a **recovered-outputs folder** (one holding
+`_recovered-outputs.json`) is digested content but is never processed further:
+`add_metadata.in_recovered_outputs`, with a local copy in `clean_stale.py`,
+which runs standalone. Detected by the manifest, not the folder name, so a raw
+folder that happens to end in `_outputs` is digested normally.
+
 The pipeline runs `1-Raw` → `2-Digested` directly and never sees the corpus
 root, so root-level utility folders are out of reach anyway. `--corpus-root`
 supplies the root for `source_path`, defaulting to the input tier's parent.
@@ -245,7 +278,8 @@ hatch for the bytes themselves.
 
 The self-check tests this rather than assuming it, matching each raw file
 against a conversion, a copy at the mirrored path, a sidecar, or — last resort
-— content identity.
+— content identity. A Claude export does not mirror: every Claude export is
+accounted for by the one merged tree, `claude-merged/`.
 
 ## Named pipeline inputs
 
@@ -254,10 +288,53 @@ and belong beside a corpus's marshaling wrapper in its `_Tools/`.
 
 | Input | Consumed by |
 |---|---|
-| `<PROJECT_UUID>_manifest.json` | `claude_to_markdown.py`, detected by content shape |
+| Claude project manifests | `claude_manifests.py`: written by `create_file` in a conversation (format 1.1, `YYYY-MM-DD-HHMM__<uuid>_manifest_r<N>_v1.1.json`), or a file in an export's `projects/` (1.0 or 1.1); detected by content shape |
+| `_claude-exports.json` | `claude_archive.py` and the digest. Written by the pipeline, but a record of decisions, so it lives at the corpus root and survives `--clean` |
 | `project_names.tsv` | `rename_chatgpt_projects.py` |
 | `<corpus>_ai_subset.txt` | `sync_subset.py` |
 | Lexicon directories | Keyword artifact vetoes |
+
+## Claude exports
+
+Exports are incremental: a chat is exported, digested, and may then be
+deleted from Claude. **No export supersedes another.** Every Claude export
+under the raw tier is part of the record, and all of them are digested into
+one tree, `2-Digested/claude-merged/`, keyed by conversation UUID
+(`claude_archive.py`).
+
+- A conversation in several exports is written once, from its **newest**
+  version — newest by the export's own date, the latest activity it contains,
+  not its folder name or time — with that export's project placement.
+- An **older version is kept** beside it (see *Filenames*) when it holds a
+  message the newest lacks. Nothing an export contained is dropped, and
+  nothing is removed because a later export lacks it.
+- Project metadata takes the newest version; every project-knowledge
+  document ever seen is kept. Memories keep the newest text and any older
+  text that differs, suffixed with its export's date.
+- When a conversation is written to a new path — moved to another project,
+  renamed in Claude — the previous file for that same conversation is
+  removed, with its `.nlm.md` and its recovered-outputs folder. A
+  conversation no longer in any export is never removed this way.
+
+**The ledger**, `_claude-exports.json` at the corpus root, lists every export
+taken in: folder, a sha256 of its `conversations.json`, its date,
+conversation count, and how it was accepted (`manifests checked`, or
+`without manifest check` for an export from before the gate, accepted once
+with `claude_archive.py accept <export>`).
+
+**The manifest gate** (`claude_manifests.py`) runs on an export not in the
+ledger, or in it with a different fingerprint — a replaced export. It runs
+before anything is written, `--clean` included, and any failure stops the run
+with the corpus untouched. An export is recorded only after a successful
+digest. Checked once, on arrival, never again: history cannot be fixed, so
+re-checking it would let one old slip block every later run.
+
+The gate requires: a manifest for every project, even an empty one; a UUID
+and name matching the export's; no conversation claimed twice or left in no
+project; no manifest listing a chat the export lacks or older than a message
+in one of its chats; and for format 1.1, a filename agreeing with the
+contents, presented, not edited after writing, with a revision above the
+last. The chat that wrote a manifest is placed in its project.
 
 ## Authored tiers
 
@@ -342,9 +419,17 @@ value at all.
 
 ## What the pipeline never does
 
-**It never deletes.** `clean_stale.py` reports; `pipeline_selfcheck.py` has no
-deletion path at all. Removing anything takes an explicit flag, and above a
-tenth of the tree a second one.
+**It never deletes anything whose source may be gone.** `clean_stale.py`
+reports; `pipeline_selfcheck.py` has no deletion path at all. Removing output
+for an absent source takes an explicit flag, and above a tenth of the tree a
+second one.
+
+What it does remove is its own previous rendering of something it has just
+rendered again: a re-run overwrites its files, `--clean` empties `2-Digested`
+on request, a recovered-outputs folder is rebuilt from its conversation, and a
+Claude conversation written to a new path loses its old file. In each case the
+content is still in `1-Raw` and has just been written again. **[restated in
+v1.3]**: v1.2's unqualified "never deletes" was already untrue of `--clean`.
 
 **It never modifies `4-Canon`.** Released artifacts are catalogued by companion
 files and stay byte-identical.

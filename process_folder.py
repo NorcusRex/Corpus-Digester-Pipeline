@@ -57,6 +57,8 @@ import chatgpt_assets          # noqa: E402
 import ocr_pdf                 # noqa: E402
 import run_log                 # noqa: E402
 import claude_to_markdown      # noqa: E402
+import claude_manifests        # noqa: E402
+import claude_archive          # noqa: E402
 import rtf_to_markdown         # noqa: E402
 import html_to_markdown        # noqa: E402
 import add_metadata            # noqa: E402
@@ -693,6 +695,11 @@ def main() -> int:
                     help="Skip writing a log file")
     ap.add_argument("--log-dir", default=None,
                     help="Directory to write the log file (default: OUTPUT_DIR)")
+    ap.add_argument("--lenient-manifests", action="store_true",
+                    help="Report Claude project-manifest problems instead of "
+                         "stopping. Only for exports made before manifests "
+                         "were written by the update-project-manifest skill "
+                         "into outputs; see docs/runbook.md.")
     ap.add_argument("--clean", action="store_true",
                     help="Delete the contents of OUTPUT_DIR before running. "
                          "Use when you want a guaranteed-fresh build.")
@@ -781,6 +788,37 @@ def main() -> int:
               file=sys.stderr)
         return 1
 
+    # ---- Manifest gate -------------------------------------------------
+    # Before anything is written, --clean included: every Claude export new
+    # to this corpus has its project manifests checked. If any are wrong the
+    # run stops here with the corpus untouched. An export already in the
+    # ledger was checked (or deliberately accepted) when it arrived and is
+    # not checked again. See claude_manifests.py and claude_archive.py.
+    ledger = claude_archive.load_ledger(corpus_root)
+    claude_exports: list[claude_archive.Export] = []
+    new_exports: list[tuple[str, str, claude_archive.Export, bool]] = []
+    gate_failures: list[tuple[Path, list[str]]] = []
+    for export_root in sorted(find_claude_export_roots(src_root)):
+        data = claude_to_markdown.load_export(export_root)
+        res = claude_manifests.resolve(export_root, data.conversations)
+        exp = claude_archive.Export(export_root, data, res)
+        claude_exports.append(exp)
+        key = claude_archive.ledger_key(export_root, corpus_root)
+        fp = claude_archive.fingerprint(export_root)
+        if claude_archive.is_recorded(ledger, key, fp):
+            continue
+        try:
+            claude_manifests.gate(res, export_root, args.lenient_manifests)
+        except claude_manifests.ManifestGateError as e:
+            gate_failures.append((export_root, e.problems))
+            continue
+        new_exports.append((key, fp, exp, bool(res.problems)))
+    if gate_failures:
+        for export_root, problems in gate_failures:
+            print(claude_manifests.banner(export_root, problems),
+                  file=sys.__stderr__)
+        return 2
+
     if args.clean and not args.dry_run and out_root.exists():
         import shutil
         # Print to console only; the log file doesn't exist yet.
@@ -857,67 +895,70 @@ def main() -> int:
                             corpus_root)
         print(f"[{i:>4}/{len(files)}] {kind:<26} {rel}")
 
-    # ---- Claude export pass --------------------------------------------
-    # Each detected Claude export root is converted as a unit. The output
-    # mirrors the source path so multiple exports stay separate.
-    if claude_roots:
+    # ---- Claude exports: merged into one tree --------------------------
+    # Exports are incremental, so every export is part of the record. They
+    # are merged by conversation UUID into a single tree (newest version
+    # written, older versions kept where they hold messages the newest
+    # lacks). See claude_archive.py.
+    if claude_exports:
+        merged_out = out_root / claude_archive.MERGED_DIR
         print()
-        print(f"Converting {len(claude_roots)} Claude export(s)...")
-        for export_root in sorted(claude_roots):
+        print(f"Merging {len(claude_exports)} Claude export(s) into "
+              f"{claude_archive.MERGED_DIR}/ ...")
+        for exp in sorted(claude_exports, key=lambda e: e.time):
+            print(f"  {exp.path.name}  (latest activity "
+                  f"{exp.time.isoformat(timespec='minutes')}, "
+                  f"{len(exp.data.conversations)} conversations)")
+        if args.dry_run:
+            print(f"    (dry run -- would write {merged_out})")
+        else:
             try:
-                rel = export_root.relative_to(src_root.resolve())
-            except ValueError:
-                rel = Path(export_root.name)
-            export_out = out_root / rel
-            print(f"  Claude export: {rel}")
-            if args.dry_run:
-                print(f"    (dry run -- would convert to {export_out})")
-                continue
-            try:
-                est = claude_to_markdown.convert_export(export_root, export_out)
+                merged, mreport = claude_archive.merge(claude_exports)
+                est = claude_to_markdown.render_export(merged, merged_out)
+                moved = claude_archive.tidy_moved(merged_out, merged.written)
             except Exception as e:  # noqa: BLE001
-                print(f"    [warn] Claude export failed: {e}")
+                print(f"    [warn] Claude merge failed: {e}")
                 stats["errors"] += 1
-                continue
-            stats["claude_exports"] += 1
-            stats["claude_conversations"] += est.get("conversations", 0)
-            stats["claude_projects"] += est.get("projects", 0)
-            stats["claude_project_docs"] += est.get("project_docs", 0)
-            stats["claude_outputs"] += est.get("outputs_recovered", 0)
-            stats["claude_outputs_lost"] += est.get("outputs_unrecoverable", 0)
-            stats["claude_outputs_edits_failed"] += est.get(
-                "outputs_edits_not_applied", 0)
-            stats["claude_memories"] += (
-                est.get("project_memories", 0)
-                + est.get("conversations_memory", 0)
-            )
-            stats["claude_grouped"] += est.get("conversations_grouped", 0)
-            stats["claude_ungrouped"] += est.get("conversations_ungrouped", 0)
-            stats["claude_manifests"] += est.get("manifests_loaded", 0)
-            stats["claude_stale_manifest_entries"] += est.get("manifest_stale_entries", 0)
-            stats["claude_title_mismatches"] += est.get("manifest_title_mismatches", 0)
-            stats["claude_uuid_conflicts"] += est.get("manifest_uuid_conflicts", 0)
-            print(f"    converted: {est.get('conversations', 0)} conversations, "
-                  f"{est.get('projects', 0)} projects "
-                  f"({est.get('project_docs', 0)} knowledge docs), "
-                  f"{est.get('project_memories', 0)} project memories")
-            mans = est.get("manifests_loaded", 0)
-            if mans:
-                grp = est.get("conversations_grouped", 0)
-                ungrp = est.get("conversations_ungrouped", 0)
-                print(f"    manifests: {mans} loaded, "
-                      f"{grp} grouped, {ungrp} ungrouped")
-                if est.get("manifest_stale_entries", 0):
-                    print(f"    [info] {est['manifest_stale_entries']} manifest "
-                          f"entries reference conversations not in this export "
-                          f"(deleted or pre-export)")
-                if est.get("manifest_title_mismatches", 0):
-                    print(f"    [info] {est['manifest_title_mismatches']} title "
-                          f"mismatches between manifest and conversation "
-                          f"(chats renamed since manifest)")
-                if est.get("manifest_uuid_conflicts", 0):
-                    print(f"    [warn] {est['manifest_uuid_conflicts']} UUID "
-                          f"conflicts between manifests (please regenerate)")
+            else:
+                stats["claude_exports"] += len(claude_exports)
+                stats["claude_conversations"] += est.get("conversations", 0)
+                stats["claude_earlier_versions"] += est.get("earlier_versions", 0)
+                stats["claude_projects"] += est.get("projects", 0)
+                stats["claude_project_docs"] += est.get("project_docs", 0)
+                stats["claude_outputs"] += est.get("outputs_recovered", 0)
+                stats["claude_outputs_lost"] += est.get("outputs_unrecoverable", 0)
+                stats["claude_outputs_edits_failed"] += est.get(
+                    "outputs_edits_not_applied", 0)
+                stats["claude_outputs_noncompliant"] += est.get(
+                    "outputs_noncompliant", 0)
+                stats["claude_memories"] += (
+                    est.get("project_memories", 0)
+                    + est.get("conversations_memory", 0))
+                stats["claude_grouped"] += est.get("conversations_grouped", 0)
+                stats["claude_ungrouped"] += est.get("conversations_ungrouped", 0)
+                stats["claude_manifests"] += est.get("manifests_loaded", 0)
+                print(f"    {mreport['conversations']} conversations, "
+                      f"{mreport['in_several_exports']} in more than one export, "
+                      f"{mreport['earlier_versions_kept']} earlier version(s) "
+                      f"kept for messages since deleted")
+                if moved:
+                    print(f"    {len(moved)} conversation file(s) moved "
+                          f"(project changed or chat renamed); old copies "
+                          f"removed:")
+                    for m in moved:
+                        print(f"      - {m.relative_to(merged_out).as_posix()}")
+                # Record the exports taken in for the first time. Only after
+                # a successful digest: a failed run leaves them new, so the
+                # next run checks them again.
+                for key, fp, exp, had_problems in new_exports:
+                    claude_archive.record(
+                        ledger, key, fp, exp.data.conversations,
+                        "without manifest check (--lenient-manifests)"
+                        if had_problems else "manifests checked")
+                if new_exports:
+                    claude_archive.save_ledger(corpus_root, ledger)
+                    print(f"    ledger: {len(new_exports)} new export(s) "
+                          f"recorded in {claude_archive.LEDGER_NAME}")
 
     elapsed = time.time() - start
 
@@ -938,6 +979,7 @@ def main() -> int:
               f"({stats['claude_conversations']} conversations, "
               f"{stats['claude_projects']} projects, "
               f"{stats['claude_project_docs']} knowledge docs, "
+              f"{stats['claude_earlier_versions']} earlier versions, "
               f"{stats['claude_memories']} memories)")
         if stats['claude_outputs'] or stats['claude_outputs_lost']:
             print(f"  claude outputs     : {stats['claude_outputs']} recovered, "
@@ -945,6 +987,10 @@ def main() -> int:
                   + (f", {stats['claude_outputs_edits_failed']} edit(s) "
                      f"not applied" if stats['claude_outputs_edits_failed']
                      else ""))
+        if stats['claude_outputs_noncompliant']:
+            print(f"  create_file rule   : {stats['claude_outputs_noncompliant']}"
+                  f" presented file(s) not written into outputs by create_file"
+                  f" (listed above as [create_file rule])")
     print(f"  markdown copied    : {stats['md']}")
     print(f"  txt wrapped        : {stats['txt']}")
     print(f"  media preserved    : {stats['media']}")
