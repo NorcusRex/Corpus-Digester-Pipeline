@@ -38,9 +38,11 @@ set "CORPUS_ROOT=I:\RPG\_Design\Loom-Nick"
 REM This corpus's Drive mirror, as an rclone remote path.
 set "DRIVE_PATH=drive:RPG/_Design/Loom-Nick"
 
-REM The subject: whose assertions sit at tier 0 in provenance
-REM weighting. Usually the corpus owner. Leave empty to let a
-REM document with exactly one non-AI speaker resolve itself.
+REM The subject: the speaker whose turns get the higher weight in
+REM keyword extraction (a term the subject used counts for more than
+REM one only the assistant used). Usually the corpus owner. Leave
+REM empty to let a document with exactly one non-AI speaker resolve
+REM itself.
 set "SUBJECT=Nick"
 
 REM Optional: this corpus's own glossaries -- invented terms, place names,
