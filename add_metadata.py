@@ -220,7 +220,8 @@ def keyword_count_for(word_count: int, base: int = 10, ceiling: int = 40) -> int
 # the file keeps unweighted keyword extraction and gets reported.
 #
 # Turns are never inferred from voice, topic shift, or style. A misattributed
-# turn would put assistant prose at tier 0, wearing the owner's authority.
+# turn would give assistant prose the subject's weight, wearing the owner's
+# authority.
 
 # Speaker-turn headings written by the export converters. Claude writes
 # "## Human" / "## Assistant"; ChatGPT writes "## User" / "## Assistant" /
@@ -502,11 +503,13 @@ def top_keywords_tfidf(body: str, doc_freq: dict, total_docs: int,
     get penalized; terms distinctive to this document are surfaced. Sublinear
     TF dampens the effect of a single keyword being repeated 80 times.
     When `tf_counts` is supplied, it replaces the raw term frequency with
-    provenance-weighted counts -- each term's count scaled by the acceptance
-    tier of the assertion carrying it. IDF is unchanged: document frequency
-    is a property of the corpus, not of who spoke. Because TF is sublinear,
-    a 128x weight becomes a +log(128) = +4.85 bonus rather than a 128x one,
-    which is what keeps the tier ladder from swamping the ranking.
+    provenance-weighted counts -- each term's whole count multiplied by
+    SUBJECT_WEIGHT if the term appears anywhere in the subject's turns, by
+    ASSISTANT_WEIGHT if not (see "Provenance weighting" above). IDF is
+    unchanged: document frequency is a property of the corpus, not of who
+    spoke. Because TF is sublinear, a 128x weight becomes a +log(128) = +4.85
+    bonus rather than a 128x one, which is what keeps the weighting from
+    swamping the ranking.
     """
     import math
     if tf_counts is not None:
