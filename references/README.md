@@ -37,7 +37,34 @@ source is drift, not a variant.
 | `repository-structure.md` | 2.5 | 2026-09-29 | AI Methods / `search-project-corpus` | The contract the pipeline owes the searcher, and the `_index.json` format both parse |
 | `project-manifest-format.md` | 1.4 | 2026-09-26 | AI Methods / `update-project-manifest` | Format of a real pipeline input, consumed by `claude_to_markdown.py` |
 
-All three are current as of the dates above.
+All three are current as of the dates above. Confirmed again on 2026-11-23:
+the Chat side reported no change to any of them when it moved `glossary.md`
+to 1.4 and `reporting-glossary.md` to 1.2.
+
+**The pipeline is ahead of `project-manifest-format.md` on purpose.** It
+already reads manifest format 1.1 — dated, numbered filenames and a
+`revision` field — as proposed to the Designer in
+`docs/handoffs/2026-10-05-1207__manifest-format-1-5-and-skill-3-4.md`. Until
+document 1.5 comes back, the copy here describes only format 1.0. When it
+arrives it replaces this copy wholesale, like any other; if it differs from
+the proposal, the pipeline follows it.
+
+### Shared files not held here
+
+| File | Version | Owner | Why the pipeline does not hold it |
+|---|---|---|---|
+| `glossary.md` | 1.4 | Chat/Design, bundled with `transcribe-chat`, `closeout-chat`, `list-current-outputs` | Nothing in the pipeline reads it |
+| `reporting-glossary.md` | 1.2 | Chat/Design, bundled with `write-report` | Nothing in the pipeline reads it |
+
+Checked on 2026-11-23 against those versions, read from the synced skills:
+where the pipeline says *provenance* and *assertion* it means what
+`glossary.md` 1.4 means. Its `provenance_structure` field records whether a
+file's form lets attribution be answered at all; its keyword weighting asks
+only whose turn a term appears in, coarser than the glossary's assertion and
+deliberately so. Assertion-level tiering belongs to the reporting skill.
+Three comments still used the retired acceptance-tier wording; PR #7 fixed
+them. If the pipeline ever reads either file, it is installed here like the
+others.
 
 ### What the last round settled
 
@@ -127,11 +154,14 @@ that side's own file. Nobody copies.
 | Fact | Document | Authority |
 |---|---|---|
 | Vocabulary — corpus, tier, sidecar | `corpus-glossary.md` | Chat/Design |
+| Vocabulary — assertion, provenance, acceptance tiers | `glossary.md`, `reporting-glossary.md` (not held) | Chat/Design |
+| Manifest filename, fields, ordering | `project-manifest-format.md` | Chat/Design |
 | `_index.json` format | `repository-structure.md` | Chat/Design |
 | "`2-Digested` covers everything in `1-Raw`" | `repository-structure.md` | Chat/Design |
 | Durability tiers, Drive ID handling | `repository-structure.md` | Chat/Design |
 | Filenames, frontmatter fields, skip list, keyword weighting | `pipeline-conventions.md` | Code |
 | Sidecar contents, media handling, orphan detection | `pipeline-conventions.md` | Code |
+| Claude export merge, the export ledger, the manifest gate | `pipeline-conventions.md` | Code |
 
 Requirements are Chat/Design's. Mechanisms are Code's. The test for which one a
 statement is: *if the pipeline changed how it did this, would the searcher have

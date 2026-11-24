@@ -12,7 +12,7 @@ reasoning is worth being able to find.
 
 | # | Item | Blocked on |
 |---|---|---|
-| 1 | Test the branch, then merge PR #1 to `main` | Nick |
+| 1 | Treat the first full digest as a test | Nick (runbook) |
 | 2 | Read the rejected-keyword report after the first digest | Nick |
 | 3 | Review the Drive collision report, then delete the Sheets | Nick |
 | 4 | Choose which books go in the RPG search library | Nick |
@@ -25,24 +25,26 @@ reasoning is worth being able to find.
 
 # Waiting on Nick
 
-## 1. Test the branch, then merge PR #1 to `main`
+## 1. Treat the first full digest as a test
 
-Everything from this session is on `claude/vigilant-davinci-amht34` and
-nothing has reached `main`. The branch is the version to test against — `main`
-has none of it: no delete guardrails, no rename detection, no OCR, no
-splitters.
+**Everything is on `main`** — PRs #1 to #7 are merged. What has not happened
+yet is a full run against real data, and most of the code has only met
+fixtures or a sample:
 
-**Most of it has met fixtures, not a corpus.** The OCR pass has never run
-against a real `ocrmypdf` or a working `pypdf`; the ChatGPT splitter and asset
-resolution have never seen the real export; `stamp_tier.py`,
-`subset_inventory.py` and `split_export.py` were tested against files made up
-for the purpose.
+- The OCR pass has never run against a real `ocrmypdf` or a working `pypdf`.
+- The ChatGPT splitter and asset resolution have never seen the real export.
+- `stamp_tier.py`, `subset_inventory.py` and `split_export.py` were tested
+  against files made up for the purpose.
+- The Claude side — project knowledge, recovered outputs, the manifest gate,
+  the merged archive — met one real sample, the 26-conversation Loom split of
+  the May export, and otherwise fixtures. Never the full export.
 
-Expect the first real digest to find things. Every contact with real data
-this session did: 433 "lost images" that turned out to be horizontal rules, a
-keyword filter discarding `clock`, two pointer schemes where one was assumed,
-an import guard that would have killed an entire run. That is the reason to
-treat the first run as a test rather than a delivery.
+Expect the first full digest to find things. Every contact with real data so
+far did: 433 "lost images" that turned out to be horizontal rules, a keyword
+filter discarding `clock`, two pointer schemes where one was assumed, an import
+guard that would have killed an entire run, and project-knowledge documents
+read as orphans. Follow `docs/runbook.md`, including its one-time steps, and
+read the run summary before pushing anything.
 
 ## 2. Read the rejected-keyword report after the first digest
 
@@ -372,7 +374,8 @@ carrying a bare `title:` therefore got no sidecar and was invisible to search,
 while looking finished. Completeness is now the test.
 
 **The audit report is on by default.** `AUDIT=1` in the wrapper, because it
-costs nothing and forgetting the flag was the only obstacle to item 1.
+costs nothing and forgetting the flag was the only obstacle to reading the
+rejected-keyword report (item 2).
 
 ## `3-Reporting` stays out of the GitHub canon repo
 
