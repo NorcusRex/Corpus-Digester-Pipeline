@@ -16,10 +16,14 @@ stale copy is an unnoticed disagreement.
 
 ## The rule
 
-**Never edit anything in this folder.** These are shared reference files. Their
-canonical source is the AI Methods project and the skill bundles on the
-claude.ai side, where they are design artifacts. A copy that has been edited
-locally is worse than no copy, because it looks authoritative and is not.
+**Never edit the shared files in this folder.** Their canonical source is the
+AI Methods project and the skill bundles on the claude.ai side, where they are
+design artifacts. A copy that has been edited locally is worse than no copy,
+because it looks authoritative and is not.
+
+This README is the exception: it is the repository's own record of the shared
+files — which versions it holds, when each arrived, who owns which fact — and
+is updated with each install.
 
 If the pipeline needs one of these changed, raise it there. The change comes
 back as a new version, and the copy here is replaced wholesale.
